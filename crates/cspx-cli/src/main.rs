@@ -2,7 +2,8 @@ use anyhow::{Context, Result};
 use chrono::{SecondsFormat, Utc};
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use cspx_core::{
-    CheckResult, Frontend, FrontendErrorKind, Reason, ReasonKind, SimpleFrontend, Stats, Status,
+    explore, CheckResult, Frontend, FrontendErrorKind, InMemoryStateStore, Reason, ReasonKind,
+    SimpleFrontend, SimpleTransitionProvider, Stats, Status, VecWorkQueue,
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -319,18 +320,18 @@ fn run_typecheck(file: &Path, io_error: Option<&String>) -> CheckResult {
 
     let frontend = SimpleFrontend::default();
     match frontend.parse_and_typecheck(&source, &file.to_string_lossy()) {
-        Ok(_) => CheckResult {
-            name: "typecheck".to_string(),
-            model: None,
-            target: None,
-            status: Status::Pass,
-            reason: None,
-            counterexample: None,
-            stats: Some(Stats {
-                states: None,
-                transitions: None,
-            }),
-        },
+        Ok(output) => {
+            let stats = build_stats(&output.ir);
+            CheckResult {
+                name: "typecheck".to_string(),
+                model: None,
+                target: None,
+                status: Status::Pass,
+                reason: None,
+                counterexample: None,
+                stats: Some(stats),
+            }
+        }
         Err(err) => {
             let (status, reason_kind) = match err.kind {
                 FrontendErrorKind::UnsupportedSyntax => {
@@ -355,6 +356,22 @@ fn run_typecheck(file: &Path, io_error: Option<&String>) -> CheckResult {
             }
         }
     }
+}
+
+fn build_stats(module: &cspx_core::ir::Module) -> Stats {
+    let provider = match SimpleTransitionProvider::from_module(module) {
+        Ok(provider) => provider,
+        Err(_) => {
+            return Stats {
+                states: None,
+                transitions: None,
+            }
+        }
+    };
+
+    let mut store = InMemoryStateStore::new();
+    let mut queue = VecWorkQueue::new();
+    explore(&provider, &mut store, &mut queue)
 }
 
 fn build_stub_check_result(

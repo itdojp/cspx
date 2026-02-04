@@ -13,6 +13,7 @@
 - `Checker`: assertion/refinement の抽象化。
 - `Minimizer`: 反例最小化。
 - `Explainer`: 原因タグ付与・ソースマッピング。
+ - `explore`（M2）: on-the-fly 探索の最小実装と統計収集。
 
 ## データフロー（概念）
 ```mermaid

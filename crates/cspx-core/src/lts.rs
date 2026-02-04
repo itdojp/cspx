@@ -10,5 +10,5 @@ pub trait TransitionProvider {
     type Transition: Clone + Send + Sync;
 
     fn initial_state(&self) -> Self::State;
-    fn transitions(&self, state: &Self::State) -> Vec<Self::Transition>;
+    fn transitions(&self, state: &Self::State) -> Vec<(Self::Transition, Self::State)>;
 }
