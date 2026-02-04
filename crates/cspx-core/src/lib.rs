@@ -1,4 +1,5 @@
 pub mod check;
+pub mod check_deadlock;
 pub mod explain;
 pub mod explore;
 pub mod frontend;
@@ -14,6 +15,7 @@ pub mod store_inmemory;
 pub mod types;
 
 pub use check::{CheckRequest, CheckResult, Checker, RefinementModel};
+pub use check_deadlock::DeadlockChecker;
 pub use explain::Explainer;
 pub use explore::explore;
 pub use frontend::{Frontend, FrontendOutput};

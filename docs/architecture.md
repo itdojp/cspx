@@ -11,9 +11,10 @@
 - `StateStore`: 状態保存（重複排除、永続化の差し替え点）。
 - `WorkQueue`: 探索キュー（探索順の差し替え点）。
 - `Checker`: assertion/refinement の抽象化。
+  - M3 では `DeadlockChecker` を最小実装として追加。
 - `Minimizer`: 反例最小化。
 - `Explainer`: 原因タグ付与・ソースマッピング。
- - `explore`（M2）: on-the-fly 探索の最小実装と統計収集。
+- `explore`（M2）: on-the-fly 探索の最小実装と統計収集。
 
 ## データフロー（概念）
 ```mermaid
