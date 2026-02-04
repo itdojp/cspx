@@ -8,6 +8,17 @@ pub enum SimpleState {
     Stop,
 }
 
+#[derive(Debug, Default, Clone, Copy)]
+pub struct SimpleStateCodec;
+
+impl crate::state_codec::StateCodec<SimpleState> for SimpleStateCodec {
+    fn encode(&self, state: &SimpleState) -> Vec<u8> {
+        match state {
+            SimpleState::Stop => b"STOP".to_vec(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SimpleTransitionProvider {
     initial: SimpleState,

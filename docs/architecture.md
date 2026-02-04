@@ -9,6 +9,7 @@
 - `CoreIr`: 中間表現（将来の解析/探索の入力）。
 - `TransitionProvider`: state から遷移を生成する。
 - `StateStore`: 状態保存（重複排除、永続化の差し替え点）。
+  - M5 では `DiskStateStore` を追加（簡易な永続化）。
 - `WorkQueue`: 探索キュー（探索順の差し替え点）。
 - `Checker`: assertion/refinement の抽象化。
   - M3 では `DeadlockChecker` を最小実装として追加。
@@ -16,6 +17,7 @@
 - `Minimizer`: 反例最小化。
 - `Explainer`: 原因タグ付与・ソースマッピング。
 - `explore`（M2）: on-the-fly 探索の最小実装と統計収集。
+- `explore_parallel`（M5）: 並列探索（スレッド数指定）。
 
 ## データフロー（概念）
 ```mermaid
