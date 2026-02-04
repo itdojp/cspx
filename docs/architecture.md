@@ -37,3 +37,6 @@ flowchart LR
 - CLI 層は `cspx-core` の公開 API のみに依存する（逆依存を禁止）。
 - 依存は最小化し、差し替え可能なインタフェースを優先する。
 - 反例/説明可能性は `Counterexample` / `SourceSpan` を中心に統一する。
+
+## スケール設計
+- DiskStateStore / explore_parallel の仕様は `docs/scale.md` を参照。
