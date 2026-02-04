@@ -1,0 +1,31 @@
+{
+  "schema_version": "0.1",
+  "tool": { "name": "cspx", "version": "0.1.0", "git_sha": "UNKNOWN" },
+  "invocation": {
+    "command": "check",
+    "args": ["tests/cases/ok.cspm"],
+    "format": "json",
+    "timeout_ms": null,
+    "memory_mb": null,
+    "seed": 0
+  },
+  "inputs": [
+    { "path": "tests/cases/ok.cspm", "sha256": "2af183be253fd571e13dd3d310357f3a1ccc7b18502a83ed918e0b88a1e5355f" }
+  ],
+  "status": "unsupported",
+  "exit_code": 3,
+  "started_at": "1970-01-01T00:00:00Z",
+  "finished_at": "1970-01-01T00:00:00Z",
+  "duration_ms": 0,
+  "checks": [
+    {
+      "name": "check",
+      "model": null,
+      "target": "deadlock free",
+      "status": "unsupported",
+      "reason": { "kind": "not_implemented", "message": "checker not implemented yet" },
+      "counterexample": null,
+      "stats": { "states": null, "transitions": null }
+    }
+  ]
+}

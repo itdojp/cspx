@@ -1,0 +1,32 @@
+{
+  "schema_version": "0.1",
+  "tool": { "name": "cspx", "version": "0.1.0", "git_sha": "UNKNOWN" },
+  "invocation": {
+    "command": "refine",
+    "args": ["tests/cases/spec.cspm", "tests/cases/impl.cspm"],
+    "format": "json",
+    "timeout_ms": null,
+    "memory_mb": null,
+    "seed": 0
+  },
+  "inputs": [
+    { "path": "tests/cases/spec.cspm", "sha256": "f447ac88848e64febdf8544ef74cfc11c6c94eb0a1d9a4e9915328fb1cdc5826" },
+    { "path": "tests/cases/impl.cspm", "sha256": "e57e3fed2d9bc7d412faca472294bdef577f78dec0e33af5c2a1fb2dc385a557" }
+  ],
+  "status": "unsupported",
+  "exit_code": 3,
+  "started_at": "1970-01-01T00:00:00Z",
+  "finished_at": "1970-01-01T00:00:00Z",
+  "duration_ms": 0,
+  "checks": [
+    {
+      "name": "refine",
+      "model": "FD",
+      "target": "tests/cases/spec.cspm tests/cases/impl.cspm",
+      "status": "unsupported",
+      "reason": { "kind": "not_implemented", "message": "refinement not implemented yet" },
+      "counterexample": null,
+      "stats": { "states": null, "transitions": null }
+    }
+  ]
+}
