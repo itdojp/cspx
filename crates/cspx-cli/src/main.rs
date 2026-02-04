@@ -1,7 +1,9 @@
 use anyhow::{Context, Result};
 use chrono::{SecondsFormat, Utc};
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
-use cspx_core::{CheckResult, Reason, ReasonKind, Stats, Status};
+use cspx_core::{
+    CheckResult, Frontend, FrontendErrorKind, Reason, ReasonKind, SimpleFrontend, Stats, Status,
+};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -178,13 +180,7 @@ fn execute(cli: &Cli) -> Result<(Status, i32, CheckResult, Vec<InputInfo>, Invoc
     let (command, args, inputs, check) = match &cli.command {
         Command::Typecheck { file } => {
             let (inputs, io_error) = build_inputs(&[file.clone()]);
-            let check = build_check_result(
-                "typecheck",
-                None,
-                None,
-                io_error.as_ref(),
-                "typechecker not implemented yet",
-            );
+            let check = run_typecheck(file, io_error.as_ref());
             (
                 "typecheck".to_string(),
                 vec![file.to_string_lossy().to_string()],
@@ -201,7 +197,7 @@ fn execute(cli: &Cli) -> Result<(Status, i32, CheckResult, Vec<InputInfo>, Invoc
             } else {
                 None
             };
-            let check = build_check_result(
+            let check = build_stub_check_result(
                 "check",
                 None,
                 target.clone(),
@@ -217,7 +213,7 @@ fn execute(cli: &Cli) -> Result<(Status, i32, CheckResult, Vec<InputInfo>, Invoc
         }
         Command::Refine(args) => {
             let (inputs, io_error) = build_inputs(&[args.spec.clone(), args.impl_.clone()]);
-            let check = build_check_result(
+            let check = build_stub_check_result(
                 "refine",
                 Some(args.model.as_str().to_string()),
                 Some(format!(
@@ -297,7 +293,71 @@ fn compute_sha256(path: &Path) -> Result<String, String> {
     Ok(hex::encode(hasher.finalize()))
 }
 
-fn build_check_result(
+fn run_typecheck(file: &Path, io_error: Option<&String>) -> CheckResult {
+    if let Some(message) = io_error {
+        return error_check(
+            "typecheck",
+            None,
+            None,
+            ReasonKind::InvalidInput,
+            message.clone(),
+        );
+    }
+
+    let source = match fs::read_to_string(file) {
+        Ok(source) => source,
+        Err(err) => {
+            return error_check(
+                "typecheck",
+                None,
+                None,
+                ReasonKind::InvalidInput,
+                format!("{}: {err}", file.display()),
+            )
+        }
+    };
+
+    let frontend = SimpleFrontend::default();
+    match frontend.parse_and_typecheck(&source, &file.to_string_lossy()) {
+        Ok(_) => CheckResult {
+            name: "typecheck".to_string(),
+            model: None,
+            target: None,
+            status: Status::Pass,
+            reason: None,
+            counterexample: None,
+            stats: Some(Stats {
+                states: None,
+                transitions: None,
+            }),
+        },
+        Err(err) => {
+            let (status, reason_kind) = match err.kind {
+                FrontendErrorKind::UnsupportedSyntax => {
+                    (Status::Unsupported, ReasonKind::UnsupportedSyntax)
+                }
+                FrontendErrorKind::InvalidInput => (Status::Error, ReasonKind::InvalidInput),
+            };
+            CheckResult {
+                name: "typecheck".to_string(),
+                model: None,
+                target: None,
+                status,
+                reason: Some(Reason {
+                    kind: reason_kind,
+                    message: Some(err.to_string()),
+                }),
+                counterexample: None,
+                stats: Some(Stats {
+                    states: None,
+                    transitions: None,
+                }),
+            }
+        }
+    }
+}
+
+fn build_stub_check_result(
     name: &str,
     model: Option<String>,
     target: Option<String>,
@@ -305,21 +365,13 @@ fn build_check_result(
     not_implemented_message: &str,
 ) -> CheckResult {
     if let Some(message) = io_error {
-        return CheckResult {
-            name: name.to_string(),
+        return error_check(
+            name,
             model,
             target,
-            status: Status::Error,
-            reason: Some(Reason {
-                kind: ReasonKind::InvalidInput,
-                message: Some(message.clone()),
-            }),
-            counterexample: None,
-            stats: Some(Stats {
-                states: None,
-                transitions: None,
-            }),
-        };
+            ReasonKind::InvalidInput,
+            message.clone(),
+        );
     }
 
     CheckResult {
@@ -330,6 +382,30 @@ fn build_check_result(
         reason: Some(Reason {
             kind: ReasonKind::NotImplemented,
             message: Some(not_implemented_message.to_string()),
+        }),
+        counterexample: None,
+        stats: Some(Stats {
+            states: None,
+            transitions: None,
+        }),
+    }
+}
+
+fn error_check(
+    name: &str,
+    model: Option<String>,
+    target: Option<String>,
+    kind: ReasonKind,
+    message: String,
+) -> CheckResult {
+    CheckResult {
+        name: name.to_string(),
+        model,
+        target,
+        status: Status::Error,
+        reason: Some(Reason {
+            kind,
+            message: Some(message),
         }),
         counterexample: None,
         stats: Some(Stats {
