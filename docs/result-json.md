@@ -5,16 +5,25 @@
 ## トップレベル
 | フィールド | 型 | 必須 | 説明 |
 |---|---|---|---|
-| `schema_version` | string | yes | 固定値 `"0.1"` |
+| `schema_version` | string | yes | 固定値 `"0.1"`（互換性方針は後述） |
 | `tool` | object | yes | ツール情報（`name`, `version`, `git_sha`） |
 | `invocation` | object | yes | 実行情報（`command`, `args`, `format`, `timeout_ms`, `memory_mb`, `seed`） |
 | `inputs` | array | yes | 入力一覧（`path`, `sha256`） |
 | `status` | enum | yes | `pass | fail | unsupported | timeout | out_of_memory | error` |
 | `exit_code` | integer | yes | CLI の exit code と一致 |
-| `started_at` | string | yes | RFC3339 / UTC（例: `2026-02-04T00:00:00Z`） |
+| `started_at` | string | yes | RFC3339 / UTC（例: `2025-01-01T00:00:00Z`） |
 | `finished_at` | string | yes | RFC3339 / UTC |
 | `duration_ms` | integer | yes | 実行時間（ミリ秒） |
 | `checks` | array | yes | チェック結果（少なくとも1件） |
+
+### 互換性ポリシー
+- `schema_version` は `major.minor` 形式。
+- v0.x の間は互換性を保証しない。仕様変更がある場合は `minor` を更新する。
+- 受け手は `schema_version` を厳密一致で判定し、未知の値は `invalid_input` として扱う。
+
+### 追加プロパティ
+- すべての object は追加プロパティを許可しない（JSON Schema の `additionalProperties: false`）。
+- 仕様にないフィールドは無効とする。
 
 ## `checks` 要素
 | フィールド | 型 | 必須 | 説明 |
@@ -66,8 +75,8 @@
   ],
   "status": "unsupported",
   "exit_code": 3,
-  "started_at": "2026-02-04T00:00:00Z",
-  "finished_at": "2026-02-04T00:00:00Z",
+  "started_at": "2025-01-01T00:00:00Z",
+  "finished_at": "2025-01-01T00:00:00Z",
   "duration_ms": 12,
   "checks": [
     {
