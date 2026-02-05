@@ -38,9 +38,9 @@ where
                 if bytes.is_empty() {
                     continue;
                 }
-                codec.decode(&bytes).map_err(|err| {
-                    io::Error::new(io::ErrorKind::InvalidData, err.to_string())
-                })?;
+                codec
+                    .decode(&bytes)
+                    .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err.to_string()))?;
                 index.insert(bytes);
             }
         }
