@@ -7,7 +7,7 @@
   "properties": {
     "id": {
       "type": "string",
-      "pattern": "^P\\d{3}"
+      "pattern": "^P\\d{3}$"
     },
     "title": { "type": "string" },
     "suite": { "enum": ["fast", "bench"] },
