@@ -1,6 +1,9 @@
-status: unsupported
+status:
+  in: ["unsupported", "error"]
 checks:
   - name: typecheck
-    status: unsupported
+    status:
+      in: ["unsupported", "error"]
     reason:
-      kind: unsupported_syntax
+      kind:
+        in: ["unsupported_syntax", "not_implemented", "invalid_input"]
