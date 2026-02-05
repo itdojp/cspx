@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use chrono::{SecondsFormat, Utc};
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use cspx_core::{
@@ -10,8 +10,8 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::time::Instant;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Parser)]
 #[command(name = "cspx")]
@@ -182,7 +182,7 @@ fn run(cli: Cli) -> Result<i32> {
 fn execute(cli: &Cli) -> Result<(Status, i32, CheckResult, Vec<InputInfo>, Invocation)> {
     let (command, args, inputs, check) = match &cli.command {
         Command::Typecheck { file } => {
-            let (inputs, io_error) = build_inputs(&[file.clone()]);
+            let (inputs, io_error) = build_inputs(std::slice::from_ref(file));
             let check = run_typecheck(file, io_error.as_ref());
             (
                 "typecheck".to_string(),
@@ -192,7 +192,7 @@ fn execute(cli: &Cli) -> Result<(Status, i32, CheckResult, Vec<InputInfo>, Invoc
             )
         }
         Command::Check(args) => {
-            let (inputs, io_error) = build_inputs(&[args.file.clone()]);
+            let (inputs, io_error) = build_inputs(std::slice::from_ref(&args.file));
             let target = if let Some(assertion) = &args.assert {
                 Some(assertion.clone())
             } else if args.all_assertions {
@@ -336,7 +336,7 @@ fn run_typecheck(file: &Path, io_error: Option<&String>) -> CheckResult {
         }
     };
 
-    let frontend = SimpleFrontend::default();
+    let frontend = SimpleFrontend;
     match frontend.parse_and_typecheck(&source, &file.to_string_lossy()) {
         Ok(output) => {
             let stats = build_stats(&output.ir);
@@ -480,10 +480,10 @@ fn run_deadlock_check(file: &Path, io_error: Option<&String>, assertion: &str) -
         }
     };
 
-    let frontend = SimpleFrontend::default();
+    let frontend = SimpleFrontend;
     match frontend.parse_and_typecheck(&source, &file.to_string_lossy()) {
         Ok(output) => {
-            let checker = DeadlockChecker::default();
+            let checker = DeadlockChecker;
             let request = CheckRequest {
                 command: cspx_core::check::CheckCommand::Check,
                 model: None,
@@ -565,7 +565,7 @@ fn run_refine_check(args: &RefineArgs, io_error: Option<&String>) -> CheckResult
         }
     };
 
-    let frontend = SimpleFrontend::default();
+    let frontend = SimpleFrontend;
     let spec_ir = match frontend.parse_and_typecheck(&spec_source, &args.spec.to_string_lossy()) {
         Ok(output) => output.ir,
         Err(err) => {
@@ -627,7 +627,7 @@ fn run_refine_check(args: &RefineArgs, io_error: Option<&String>) -> CheckResult
         }
     };
 
-    let checker = RefinementChecker::default();
+    let checker = RefinementChecker;
     let request = CheckRequest {
         command: cspx_core::check::CheckCommand::Refine,
         model: Some(match args.model {
@@ -681,7 +681,12 @@ fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
-    let tmp_name = format!("{}.tmp.{}.{}", file_name.to_string_lossy(), std::process::id(), nonce);
+    let tmp_name = format!(
+        "{}.tmp.{}.{}",
+        file_name.to_string_lossy(),
+        std::process::id(),
+        nonce
+    );
     let tmp_path = path.with_file_name(tmp_name);
     fs::write(&tmp_path, contents).with_context(|| format!("write {}", tmp_path.display()))?;
     fs::rename(&tmp_path, path).with_context(|| format!("rename {}", path.display()))?;
