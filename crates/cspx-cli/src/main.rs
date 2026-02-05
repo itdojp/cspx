@@ -10,8 +10,8 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::time::Instant;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Parser)]
 #[command(name = "cspx")]
@@ -681,7 +681,12 @@ fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
-    let tmp_name = format!("{}.tmp.{}.{}", file_name.to_string_lossy(), std::process::id(), nonce);
+    let tmp_name = format!(
+        "{}.tmp.{}.{}",
+        file_name.to_string_lossy(),
+        std::process::id(),
+        nonce
+    );
     let tmp_path = path.with_file_name(tmp_name);
     fs::write(&tmp_path, contents).with_context(|| format!("write {}", tmp_path.display()))?;
     fs::rename(&tmp_path, path).with_context(|| format!("rename {}", path.display()))?;
