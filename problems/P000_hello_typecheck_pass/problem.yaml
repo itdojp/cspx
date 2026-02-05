@@ -1,5 +1,5 @@
 id: P000
-title: minimal typecheck pass (STOP only)
+title: minimal valid CSPM
 suite: fast
 tags: [typecheck, fast]
 run:
