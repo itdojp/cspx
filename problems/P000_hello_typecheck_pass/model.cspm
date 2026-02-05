@@ -1,2 +1,3 @@
--- P000: minimal valid CSPM (current minimal subset)
-P = STOP
+-- P000: minimal valid CSPM
+channel a
+P = a -> STOP
