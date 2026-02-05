@@ -182,8 +182,7 @@ fn load_problem_schema(root: &Path) -> Result<JSONSchema> {
         .with_context(|| format!("read {}", schema_path.display()))?;
     let schema_json: JsonValue =
         serde_json::from_str(&schema_text).context("parse problem schema")?;
-    let schema_json = Box::leak(Box::new(schema_json));
-    JSONSchema::compile(schema_json).context("compile problem schema")
+    JSONSchema::compile(&schema_json).context("compile problem schema")
 }
 
 fn load_expect_schema(root: &Path) -> Result<JSONSchema> {
@@ -192,8 +191,7 @@ fn load_expect_schema(root: &Path) -> Result<JSONSchema> {
         .with_context(|| format!("read {}", schema_path.display()))?;
     let schema_json: JsonValue =
         serde_json::from_str(&schema_text).context("parse expect schema")?;
-    let schema_json = Box::leak(Box::new(schema_json));
-    JSONSchema::compile(schema_json).context("compile expect schema")
+    JSONSchema::compile(&schema_json).context("compile expect schema")
 }
 
 fn load_problems(problems_dir: &Path, schema: &JSONSchema) -> Result<Vec<Problem>> {
@@ -278,8 +276,11 @@ fn effective_suite(spec: &ProblemSpec) -> &str {
 
 fn load_expect(problem: &Problem, schema: &JSONSchema) -> Result<ExpectSpec> {
     let expect_path = problem.dir.join("expect.yaml");
-    let text =
-        fs::read_to_string(&expect_path).with_context(|| format!("read {}", expect_path.display()))?;
+    if !expect_path.exists() {
+        anyhow::bail!("expect.yaml is required: {}", expect_path.display());
+    }
+    let text = fs::read_to_string(&expect_path)
+        .with_context(|| format!("read {}", expect_path.display()))?;
     let raw_json: JsonValue = serde_yaml::from_str(&text).context("parse expect.yaml as json")?;
     if let Err(errors) = schema.validate(&raw_json) {
         let details: Vec<String> = errors.map(|err| err.to_string()).collect();
@@ -308,7 +309,7 @@ fn evaluate_run(expect: &ExpectSpec, outcome: &RunOutcome, run_index: usize) -> 
     let result_json = match &outcome.result_json {
         Some(json) => json,
         None => {
-            if expect.status.is_some() || expect.checks.is_some() || expect.compare.is_some() {
+            if expect.status.is_some() || expect.checks.is_some() {
                 errors.push(format!("run {}: result JSON missing", run_index));
             }
             return errors;
@@ -343,7 +344,12 @@ fn evaluate_run(expect: &ExpectSpec, outcome: &RunOutcome, run_index: usize) -> 
                     }
                 }
                 if !matched {
-                    errors.push(format!("run {}: checks[{}] not matched", run_index, idx));
+                    errors.push(format!(
+                        "run {}: checks[{}] not matched (expect {})",
+                        run_index,
+                        idx,
+                        describe_check_expect(check_expect)
+                    ));
                 }
             }
         }
@@ -352,7 +358,7 @@ fn evaluate_run(expect: &ExpectSpec, outcome: &RunOutcome, run_index: usize) -> 
     errors
 }
 
-fn evaluate_compare(expect: &ExpectSpec, outcomes: &[RunOutcome]) -> Vec<String> {
+fn evaluate_compare(expect: &ExpectSpec, outcomes: &[RunOutcome], problem_id: &str) -> Vec<String> {
     let mut errors = Vec::new();
     let Some(compare) = &expect.compare else {
         return errors;
@@ -379,8 +385,9 @@ fn evaluate_compare(expect: &ExpectSpec, outcomes: &[RunOutcome]) -> Vec<String>
         for (idx, value) in normalized.iter().enumerate().skip(1) {
             if value != first {
                 errors.push(format!(
-                    "compare: normalized_json_equal mismatch (run 1 vs run {})",
-                    idx + 1
+                    "compare: normalized_json_equal mismatch (run 1 vs run {}) (see problems/.out/{}/run-*/normalized.json)",
+                    idx + 1,
+                    problem_id
                 ));
                 break;
             }
@@ -448,6 +455,22 @@ fn check_matches(expect: &CheckExpect, actual: &JsonValue) -> bool {
         }
     }
     true
+}
+
+fn describe_check_expect(expect: &CheckExpect) -> String {
+    if let Some(name) = &expect.name {
+        return format!("name={}", name);
+    }
+    if let Some(target) = &expect.target {
+        return format!("target={}", target);
+    }
+    if let Some(model) = &expect.model {
+        return format!("model={}", model);
+    }
+    if let Some(status) = &expect.status {
+        return format!("status={}", status);
+    }
+    "unspecified".to_string()
 }
 
 fn counterexample_matches(expect: &CounterexampleExpect, actual: Option<&JsonValue>) -> bool {
@@ -665,7 +688,7 @@ fn match_bool(actual: bool, expect: &JsonValue) -> bool {
             if let Some(eq) = map.get("eq").and_then(|v| v.as_bool()) {
                 return actual == eq;
             }
-            false
+            map.is_empty()
         }
         _ => false,
     }
@@ -687,6 +710,7 @@ fn match_string(actual: &str, expect: &JsonValue) -> bool {
             }
             if let Some(regex) = map.get("regex").and_then(|v| v.as_str()) {
                 let Ok(pattern) = Regex::new(regex) else {
+                    eprintln!("invalid regex in expect constraint: {}", regex);
                     return false;
                 };
                 if !pattern.is_match(actual) {
@@ -720,22 +744,30 @@ fn normalize_json(mut value: JsonValue, extra_ignore: &[String]) -> JsonValue {
 }
 
 fn remove_path(value: &mut JsonValue, path: &str) {
-    let mut current = value;
-    let mut parts = path.split('.').peekable();
-    while let Some(part) = parts.next() {
-        if parts.peek().is_none() {
-            if let Some(obj) = current.as_object_mut() {
-                obj.remove(part);
+    let parts: Vec<&str> = path.split('.').collect();
+    remove_path_recursive(value, &parts);
+}
+
+fn remove_path_recursive(value: &mut JsonValue, parts: &[&str]) {
+    match value {
+        JsonValue::Object(map) => {
+            if let Some((first, rest)) = parts.split_first() {
+                if rest.is_empty() {
+                    map.remove(*first);
+                } else if let Some(next) = map.get_mut(*first) {
+                    remove_path_recursive(next, rest);
+                }
             }
-            return;
+            for child in map.values_mut() {
+                remove_path_recursive(child, parts);
+            }
         }
-        let Some(obj) = current.as_object_mut() else {
-            return;
-        };
-        let Some(next) = obj.get_mut(part) else {
-            return;
-        };
-        current = next;
+        JsonValue::Array(items) => {
+            for child in items {
+                remove_path_recursive(child, parts);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -755,8 +787,8 @@ fn run_problem(
         eprintln!(
             "warning: repeat override (problem {}, expect={}, run={})",
             problem.spec.id,
-            expect.repeat.unwrap_or(1),
-            run.repeat.unwrap_or(1)
+            expect.repeat.unwrap(),
+            run.repeat.unwrap()
         );
     }
     let compare_ignore = expect
@@ -798,7 +830,7 @@ fn run_problem(
     for (idx, outcome) in outcomes.iter().enumerate() {
         errors.extend(evaluate_run(&expect, outcome, idx + 1));
     }
-    errors.extend(evaluate_compare(&expect, &outcomes));
+    errors.extend(evaluate_compare(&expect, &outcomes, &problem.spec.id));
 
     let report_path = out_root
         .join(&problem.spec.id)
