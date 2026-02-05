@@ -1,0 +1,3 @@
+-- P001: unsupported syntax (prefix)
+channel a
+P = a -> STOP

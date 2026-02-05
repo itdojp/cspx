@@ -1,0 +1,6 @@
+id: P000
+title: minimal typecheck pass (STOP only)
+suite: fast
+tags: [typecheck, fast]
+run:
+  cmd: ["cspx", "typecheck", "model.cspm", "--format", "json"]

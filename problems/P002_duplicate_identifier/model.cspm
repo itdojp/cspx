@@ -1,0 +1,3 @@
+-- P002: duplicate identifier
+P = STOP
+P = STOP

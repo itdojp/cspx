@@ -1,0 +1,6 @@
+status: error
+checks:
+  - name: typecheck
+    status: error
+    reason:
+      kind: invalid_input

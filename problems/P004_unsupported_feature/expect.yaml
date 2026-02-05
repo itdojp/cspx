@@ -1,0 +1,6 @@
+status: unsupported
+checks:
+  - name: typecheck
+    status: unsupported
+    reason:
+      kind: unsupported_syntax

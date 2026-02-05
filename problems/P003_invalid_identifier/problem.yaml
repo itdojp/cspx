@@ -1,0 +1,6 @@
+id: P003
+title: invalid identifier (invalid input)
+suite: fast
+tags: [typecheck, fast]
+run:
+  cmd: ["cspx", "typecheck", "model.cspm", "--format", "json"]

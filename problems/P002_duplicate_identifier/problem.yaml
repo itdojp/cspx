@@ -1,0 +1,6 @@
+id: P002
+title: duplicate identifier (invalid input)
+suite: fast
+tags: [typecheck, fast]
+run:
+  cmd: ["cspx", "typecheck", "model.cspm", "--format", "json"]
