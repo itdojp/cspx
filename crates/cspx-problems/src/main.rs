@@ -1,10 +1,12 @@
 use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use jsonschema::JSONSchema;
+use rayon::prelude::*;
+use rayon::ThreadPoolBuilder;
 use regex::Regex;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -132,8 +134,8 @@ enum ProblemResult {
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    if args.jobs > 1 {
-        eprintln!("warning: --jobs > 1 is not supported yet; running sequentially");
+    if args.jobs == 0 {
+        anyhow::bail!("--jobs must be >= 1");
     }
 
     let root = std::env::current_dir().context("current dir")?;
@@ -143,7 +145,7 @@ fn main() -> Result<()> {
     let mut problems = load_problems(&problems_dir, &problem_schema)?;
     problems.sort_by(|a, b| a.spec.id.cmp(&b.spec.id));
 
-    let filtered = filter_problems(&problems, &args)?;
+    let filtered = filter_problems(&problems, &args, &root)?;
     if args.list {
         for problem in &filtered {
             println!("{} {}", problem.spec.id, problem.spec.title);
@@ -151,18 +153,64 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let out_root = problems_dir.join(".out");
     let mut any_fail = false;
     let mut any_error = false;
-    for problem in filtered {
-        match run_problem(&out_root, problem, &args, &expect_schema) {
-            Ok(ProblemResult::Pass) => {}
-            Ok(ProblemResult::Fail) => {
-                any_fail = true;
+    let out_root = problems_dir.join(".out");
+
+    if args.jobs == 1 {
+        for problem in filtered {
+            let mut logs = Vec::new();
+            match run_problem(&out_root, problem, &args, &expect_schema, &mut logs) {
+                Ok(ProblemResult::Pass) => {
+                    for line in logs {
+                        println!("{line}");
+                    }
+                }
+                Ok(ProblemResult::Fail) => {
+                    for line in logs {
+                        println!("{line}");
+                    }
+                    any_fail = true;
+                }
+                Err(err) => {
+                    for line in logs {
+                        println!("{line}");
+                    }
+                    any_error = true;
+                    eprintln!("ERROR {}: {}", problem.spec.id, err);
+                }
             }
-            Err(err) => {
-                any_error = true;
-                eprintln!("ERROR {}: {}", problem.spec.id, err);
+        }
+    } else {
+        let pool = ThreadPoolBuilder::new()
+            .num_threads(args.jobs)
+            .build()
+            .context("build thread pool")?;
+        let mut records = pool.install(|| {
+            filtered
+                .par_iter()
+                .enumerate()
+                .map(|(idx, problem)| {
+                    let mut logs = Vec::new();
+                    let result = run_problem(&out_root, problem, &args, &expect_schema, &mut logs);
+                    (idx, problem.spec.id.clone(), logs, result)
+                })
+                .collect::<Vec<_>>()
+        });
+        records.sort_by_key(|(idx, ..)| *idx);
+        for (_idx, id, logs, result) in records {
+            for line in logs {
+                println!("{line}");
+            }
+            match result {
+                Ok(ProblemResult::Pass) => {}
+                Ok(ProblemResult::Fail) => {
+                    any_fail = true;
+                }
+                Err(err) => {
+                    any_error = true;
+                    eprintln!("ERROR {id}: {err}");
+                }
             }
         }
     }
@@ -229,10 +277,27 @@ fn load_problems(problems_dir: &Path, schema: &JSONSchema) -> Result<Vec<Problem
     Ok(problems)
 }
 
-fn filter_problems<'a>(problems: &'a [Problem], args: &Args) -> Result<Vec<&'a Problem>> {
+fn canonicalize_for_match(root: &Path, input: &Path) -> PathBuf {
+    let abs = if input.is_absolute() {
+        input.to_path_buf()
+    } else {
+        root.join(input)
+    };
+    abs.canonicalize().unwrap_or(abs)
+}
+
+fn filter_problems<'a>(
+    problems: &'a [Problem],
+    args: &Args,
+    root: &Path,
+) -> Result<Vec<&'a Problem>> {
     let only_ids = &args.only;
-    let only_dirs = &args.only_dir;
-    let use_only = !only_ids.is_empty() || !only_dirs.is_empty();
+    let use_only = !only_ids.is_empty() || !args.only_dir.is_empty();
+    let only_dirs: HashSet<PathBuf> = args
+        .only_dir
+        .iter()
+        .map(|dir| canonicalize_for_match(root, dir))
+        .collect();
     let suite = match args.suite {
         Suite::Fast => "fast",
         Suite::Bench => "bench",
@@ -245,7 +310,7 @@ fn filter_problems<'a>(problems: &'a [Problem], args: &Args) -> Result<Vec<&'a P
             if only_ids.iter().any(|id| id == &problem.spec.id) {
                 matched = true;
             }
-            if only_dirs.iter().any(|dir| dir == &problem.dir) {
+            if only_dirs.contains(&canonicalize_for_match(root, &problem.dir)) {
                 matched = true;
             }
             if matched {
@@ -764,6 +829,7 @@ fn run_problem(
     problem: &Problem,
     args: &Args,
     expect_schema: &JSONSchema,
+    logs: &mut Vec<String>,
 ) -> Result<ProblemResult> {
     let expect = load_expect(problem, expect_schema)?;
     let run = &problem.spec.run;
@@ -803,10 +869,10 @@ fn run_problem(
             )?;
         }
         let status = outcome.result_status.as_deref().unwrap_or("unknown");
-        println!(
+        logs.push(format!(
             "DONE {} run={} exit={} status={}",
             problem.spec.id, idx, outcome.exit_code, status
-        );
+        ));
         outcomes.push(outcome);
     }
 
@@ -823,7 +889,11 @@ fn run_problem(
     } else {
         let body = errors.join("\n");
         fs::write(&report_path, format!("FAIL\n{body}\n"))?;
-        println!("FAIL {}", problem.spec.id);
+        logs.push(format!(
+            "FAIL {} report={}",
+            problem.spec.id,
+            report_path.display()
+        ));
         Ok(ProblemResult::Fail)
     }
 }

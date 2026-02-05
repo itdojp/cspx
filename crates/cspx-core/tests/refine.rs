@@ -53,7 +53,7 @@ fn refinement_mismatch_fails() {
         entry: None,
     };
 
-    let checker = RefinementChecker::default();
+    let checker = RefinementChecker;
     let request = CheckRequest {
         command: CheckCommand::Refine,
         model: Some(RefinementModel::T),
