@@ -332,11 +332,7 @@ fn evaluate_run(expect: &ExpectSpec, outcome: &RunOutcome, run_index: usize) -> 
     }
 
     if let Some(checks_expect) = &expect.checks {
-        let checks_actual = result_json.get("checks").and_then(|v| v.as_array());
-        if checks_actual.is_none() {
-            errors.push(format!("run {}: checks missing", run_index));
-        } else {
-            let checks_actual = checks_actual.unwrap();
+        if let Some(checks_actual) = result_json.get("checks").and_then(|v| v.as_array()) {
             for (idx, check_expect) in checks_expect.iter().enumerate() {
                 let mut matched = false;
                 for check_actual in checks_actual {
@@ -354,6 +350,8 @@ fn evaluate_run(expect: &ExpectSpec, outcome: &RunOutcome, run_index: usize) -> 
                     ));
                 }
             }
+        } else {
+            errors.push(format!("run {}: checks missing", run_index));
         }
     }
 
@@ -770,13 +768,13 @@ fn run_problem(
     let expect = load_expect(problem, expect_schema)?;
     let run = &problem.spec.run;
     let repeat = expect.repeat.or(run.repeat).unwrap_or(1);
-    if expect.repeat.is_some() && run.repeat.is_some() && expect.repeat != run.repeat {
-        eprintln!(
-            "warning: repeat override (problem {}, expect={}, run={})",
-            problem.spec.id,
-            expect.repeat.unwrap(),
-            run.repeat.unwrap()
-        );
+    if let (Some(expect_repeat), Some(run_repeat)) = (expect.repeat, run.repeat) {
+        if expect_repeat != run_repeat {
+            eprintln!(
+                "warning: repeat override (problem {}, expect={}, run={})",
+                problem.spec.id, expect_repeat, run_repeat
+            );
+        }
     }
     let compare_ignore = expect
         .compare
