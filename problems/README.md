@@ -29,15 +29,15 @@ scripts/run-problems --cspx target/debug/cspx --only P000 --only P101
 ```
 
 ### 特定問題のみ実行（ディレクトリ指定）
-現状の実装は **絶対パス一致** のため、相対パス指定はマッチしない。
+相対パス・絶対パスのどちらでも指定できる。
 ```sh
-scripts/run-problems --cspx target/debug/cspx --only-dir "$(pwd)/problems/P000_hello_typecheck_pass"
+scripts/run-problems --cspx target/debug/cspx --only-dir problems/P000_hello_typecheck_pass
 ```
 
 ### 主なオプション
 - `--suite fast|bench`: suite フィルタ（デフォルト: `fast`）
 - `--cspx <path>`: `run.cmd[0] == "cspx"` の場合に `cspx` 実体を差し替える（例: `target/debug/cspx`）
-- `--jobs <n>`: 将来用（現状 `>1` は未対応で逐次実行）
+- `--jobs <n>`: 並列実行（問題単位、出力順は ID 昇順で安定化）
 
 ## CI での実行
 GitHub Actions では以下を実行する（`.github/workflows/ci.yml`）。
