@@ -24,5 +24,10 @@ docker build -t cspx:local .
 docker run --rm cspx:local --version
 ```
 
+## 出力例（JSON）
+```sh
+cspx typecheck tests/cases/ok.cspm --format json
+```
+
 ## ライセンス
 Apache-2.0
