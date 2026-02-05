@@ -155,7 +155,7 @@ fn main() -> Result<()> {
     let mut any_fail = false;
     let mut any_error = false;
     for problem in filtered {
-        match run_problem(&out_root, &problem, &args, &expect_schema) {
+        match run_problem(&out_root, problem, &args, &expect_schema) {
             Ok(ProblemResult::Pass) => {}
             Ok(ProblemResult::Fail) => {
                 any_fail = true;
