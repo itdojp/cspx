@@ -1,0 +1,7 @@
+-- P122: divergence only after a visible prefix
+channel a
+channel b
+Loop = a -> Loop
+Div = Loop \\ {|a|}
+P = b -> Div
+assert P :[divergence free [FD]]

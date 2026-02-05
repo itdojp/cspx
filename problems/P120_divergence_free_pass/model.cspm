@@ -1,0 +1,6 @@
+-- P120: divergence-free baseline
+channel ch : {0..1}
+Sender = ch!1 -> Sender
+Receiver = ch?x -> Receiver
+System = Sender [|{|ch|}|] Receiver
+assert System :[divergence free [FD]]
