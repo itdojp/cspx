@@ -6,6 +6,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 use std::time::Instant;
 
 #[derive(Parser)]
@@ -267,7 +268,7 @@ fn execute(cli: &Cli) -> Result<(Status, i32, CheckResult, Vec<InputInfo>, Invoc
 
 fn build_inputs(paths: &[PathBuf]) -> (Vec<InputInfo>, Option<String>) {
     let mut inputs = Vec::new();
-    let mut error: Option<String> = None;
+    let mut errors: Vec<String> = Vec::new();
 
     for path in paths {
         match compute_sha256(path) {
@@ -276,9 +277,7 @@ fn build_inputs(paths: &[PathBuf]) -> (Vec<InputInfo>, Option<String>) {
                 sha256,
             }),
             Err(err) => {
-                if error.is_none() {
-                    error = Some(err);
-                }
+                errors.push(err);
                 inputs.push(InputInfo {
                     path: path.to_string_lossy().to_string(),
                     sha256: "UNKNOWN".to_string(),
@@ -286,6 +285,12 @@ fn build_inputs(paths: &[PathBuf]) -> (Vec<InputInfo>, Option<String>) {
             }
         }
     }
+
+    let error = if errors.is_empty() {
+        None
+    } else {
+        Some(errors.join("\n"))
+    };
 
     (inputs, error)
 }
@@ -365,7 +370,15 @@ fn emit_text(result: &ResultJson, output: Option<&Path>) -> Result<()> {
 }
 
 fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
-    let tmp_path = path.with_extension("tmp");
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| anyhow!("output path must include a file name"))?;
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let tmp_name = format!("{}.tmp.{}.{}", file_name.to_string_lossy(), std::process::id(), nonce);
+    let tmp_path = path.with_file_name(tmp_name);
     fs::write(&tmp_path, contents).with_context(|| format!("write {}", tmp_path.display()))?;
     fs::rename(&tmp_path, path).with_context(|| format!("rename {}", path.display()))?;
     Ok(())
