@@ -1,0 +1,3 @@
+-- P003: payload out of declared domain
+channel ch : {0..1}
+P = ch!2 -> STOP
