@@ -66,7 +66,7 @@ where
     let pool = ThreadPoolBuilder::new()
         .num_threads(workers.max(1))
         .build()
-        .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))?;
+        .map_err(|err| io::Error::other(err.to_string()))?;
 
     while !frontier.is_empty() {
         let batch = frontier;

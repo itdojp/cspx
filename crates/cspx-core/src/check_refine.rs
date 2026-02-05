@@ -68,9 +68,9 @@ impl Checker<RefinementInput> for RefinementChecker {
             ],
             source_spans: collect_spans(&input.spec, &input.impl_),
         };
-        let minimizer = IdentityMinimizer::default();
+        let minimizer = IdentityMinimizer;
         let counterexample = minimizer.minimize(counterexample);
-        let explainer = BasicExplainer::default();
+        let explainer = BasicExplainer;
         let counterexample = explainer.explain(counterexample);
 
         CheckResult {
