@@ -1,6 +1,6 @@
 id: P301
 title: counterexample span mapping
 suite: fast
-tags: [counterexample, span, fast]
+tags: [deadlock, counterexample, span, assertion, fast]
 run:
   cmd: ["cspx", "check", "--assert", "deadlock free", "model.cspm", "--format", "json"]
