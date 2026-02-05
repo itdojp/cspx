@@ -17,6 +17,15 @@ impl crate::state_codec::StateCodec<SimpleState> for SimpleStateCodec {
             SimpleState::Stop => b"STOP".to_vec(),
         }
     }
+
+    fn decode(&self, bytes: &[u8]) -> Result<SimpleState, crate::state_codec::StateCodecError> {
+        match bytes {
+            b"STOP" => Ok(SimpleState::Stop),
+            _ => Err(crate::state_codec::StateCodecError::new(
+                "unknown SimpleState encoding",
+            )),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

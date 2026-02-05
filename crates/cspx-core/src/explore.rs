@@ -4,8 +4,13 @@ use crate::store::StateStore;
 use crate::types::Stats;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
+use std::io;
 
-pub fn explore<P, SStore, Q>(provider: &P, store: &mut SStore, queue: &mut Q) -> Stats
+pub fn explore<P, SStore, Q>(
+    provider: &P,
+    store: &mut SStore,
+    queue: &mut Q,
+) -> std::io::Result<Stats>
 where
     P: TransitionProvider,
     P::State: Clone,
@@ -16,7 +21,7 @@ where
     let mut transitions: u64 = 0;
 
     let initial = provider.initial_state();
-    if store.insert(initial.clone()) {
+    if store.insert(initial.clone())? {
         queue.push(initial);
         states += 1;
     }
@@ -25,20 +30,24 @@ where
         let next = provider.transitions(&state);
         transitions += next.len() as u64;
         for (_label, next_state) in next {
-            if store.insert(next_state.clone()) {
+            if store.insert(next_state.clone())? {
                 queue.push(next_state);
                 states += 1;
             }
         }
     }
 
-    Stats {
+    Ok(Stats {
         states: Some(states),
         transitions: Some(transitions),
-    }
+    })
 }
 
-pub fn explore_parallel<P, SStore>(provider: &P, store: &mut SStore, workers: usize) -> Stats
+pub fn explore_parallel<P, SStore>(
+    provider: &P,
+    store: &mut SStore,
+    workers: usize,
+) -> std::io::Result<Stats>
 where
     P: TransitionProvider + Sync,
     P::State: Clone + Send + Sync,
@@ -49,7 +58,7 @@ where
     let mut transitions: u64 = 0;
 
     let initial = provider.initial_state();
-    if store.insert(initial.clone()) {
+    if store.insert(initial.clone())? {
         states += 1;
     }
 
@@ -57,7 +66,7 @@ where
     let pool = ThreadPoolBuilder::new()
         .num_threads(workers.max(1))
         .build()
-        .expect("rayon pool");
+        .map_err(|err| io::Error::new(io::ErrorKind::Other, err.to_string()))?;
 
     while !frontier.is_empty() {
         let batch = frontier;
@@ -72,7 +81,7 @@ where
         for transitions_vec in batches {
             transitions += transitions_vec.len() as u64;
             for (_label, next_state) in transitions_vec {
-                if store.insert(next_state.clone()) {
+                if store.insert(next_state.clone())? {
                     next_frontier.push(next_state);
                     states += 1;
                 }
@@ -81,8 +90,8 @@ where
         frontier = next_frontier;
     }
 
-    Stats {
+    Ok(Stats {
         states: Some(states),
         transitions: Some(transitions),
-    }
+    })
 }

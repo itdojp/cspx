@@ -2,7 +2,7 @@ use crate::state_codec::StateCodec;
 use crate::store::StateStore;
 use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{self, BufRead, BufReader, Write};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 
@@ -32,10 +32,16 @@ where
                 if line.is_empty() {
                     continue;
                 }
-                let bytes = hex::decode(line).unwrap_or_default();
-                if !bytes.is_empty() {
-                    index.insert(bytes);
+                let bytes = hex::decode(&line).map_err(|err| {
+                    io::Error::new(io::ErrorKind::InvalidData, format!("invalid hex: {err}"))
+                })?;
+                if bytes.is_empty() {
+                    continue;
                 }
+                codec.decode(&bytes).map_err(|err| {
+                    io::Error::new(io::ErrorKind::InvalidData, err.to_string())
+                })?;
+                index.insert(bytes);
             }
         }
         Ok(Self {
@@ -51,20 +57,18 @@ impl<S, C> StateStore<S> for DiskStateStore<S, C>
 where
     C: StateCodec<S>,
 {
-    fn insert(&mut self, state: S) -> bool {
+    fn insert(&mut self, state: S) -> std::io::Result<bool> {
         let bytes = self.codec.encode(&state);
         if self.index.contains(&bytes) {
-            return false;
+            return Ok(false);
         }
-        self.index.insert(bytes.clone());
-        if let Ok(mut file) = OpenOptions::new()
+        let mut file = OpenOptions::new()
             .create(true)
             .append(true)
-            .open(&self.path)
-        {
-            let _ = writeln!(file, "{}", hex::encode(bytes));
-        }
-        true
+            .open(&self.path)?;
+        writeln!(file, "{}", hex::encode(&bytes))?;
+        self.index.insert(bytes);
+        Ok(true)
     }
 
     fn len(&self) -> usize {

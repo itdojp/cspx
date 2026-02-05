@@ -119,7 +119,13 @@ fn build_stats(module: &Module) -> Stats {
 
     let mut store = InMemoryStateStore::new();
     let mut queue = VecWorkQueue::new();
-    explore(&provider, &mut store, &mut queue)
+    match explore(&provider, &mut store, &mut queue) {
+        Ok(stats) => stats,
+        Err(_) => Stats {
+            states: None,
+            transitions: None,
+        },
+    }
 }
 
 fn trace_refines(

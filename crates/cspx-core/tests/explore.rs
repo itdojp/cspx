@@ -21,7 +21,7 @@ fn explore_stop_yields_single_state() {
     let provider = SimpleTransitionProvider::from_module(&module).expect("provider");
     let mut store = InMemoryStateStore::new();
     let mut queue = VecWorkQueue::new();
-    let stats = explore(&provider, &mut store, &mut queue);
+    let stats = explore(&provider, &mut store, &mut queue).expect("explore");
 
     assert_eq!(stats.states, Some(1));
     assert_eq!(stats.transitions, Some(0));
@@ -45,7 +45,7 @@ fn explore_parallel_stop_yields_single_state() {
 
     let provider = SimpleTransitionProvider::from_module(&module).expect("provider");
     let mut store = InMemoryStateStore::new();
-    let stats = explore_parallel(&provider, &mut store, 2);
+    let stats = explore_parallel(&provider, &mut store, 2).expect("explore_parallel");
 
     assert_eq!(stats.states, Some(1));
     assert_eq!(stats.transitions, Some(0));
