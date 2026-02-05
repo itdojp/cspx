@@ -1,0 +1,6 @@
+-- P902: alternating bit protocol tiny (placeholder)
+channel send, ack, out : {0..1}
+Sender = send!0 -> ack?0 -> send!1 -> ack?1 -> Sender
+Receiver = send?b -> out!b -> ack!b -> Receiver
+System = Sender [|{|send,ack|}|] Receiver
+assert System :[deadlock free [F]]

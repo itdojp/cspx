@@ -1,0 +1,6 @@
+id: P900
+title: ring_n generator (bench placeholder)
+suite: bench
+tags: [bench, generator]
+run:
+  cmd: ["cspx", "check", "--assert", "deadlock free", "model.cspm", "--format", "json"]
