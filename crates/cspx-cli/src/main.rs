@@ -2,7 +2,9 @@ use anyhow::{Context, Result};
 use chrono::{SecondsFormat, Utc};
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use cspx_core::{
-    CheckResult, Frontend, FrontendErrorKind, Reason, ReasonKind, SimpleFrontend, Stats, Status,
+    explore, CheckRequest, CheckResult, Checker, DeadlockChecker, Frontend, FrontendErrorKind,
+    InMemoryStateStore, Reason, ReasonKind, SimpleFrontend, SimpleTransitionProvider, Stats,
+    Status, VecWorkQueue,
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -198,13 +200,35 @@ fn execute(cli: &Cli) -> Result<(Status, i32, CheckResult, Vec<InputInfo>, Invoc
             } else {
                 None
             };
-            let check = build_stub_check_result(
-                "check",
-                None,
-                target.clone(),
-                io_error.as_ref(),
-                "checker not implemented yet",
-            );
+            let check = if let Some(assertion) = &args.assert {
+                if assertion == "deadlock free" {
+                    run_deadlock_check(&args.file, io_error.as_ref(), assertion)
+                } else {
+                    build_stub_check_result(
+                        "check",
+                        None,
+                        target.clone(),
+                        io_error.as_ref(),
+                        "assertion not implemented yet",
+                    )
+                }
+            } else if args.all_assertions {
+                build_stub_check_result(
+                    "check",
+                    None,
+                    target.clone(),
+                    io_error.as_ref(),
+                    "all-assertions not implemented yet",
+                )
+            } else {
+                build_stub_check_result(
+                    "check",
+                    None,
+                    target.clone(),
+                    io_error.as_ref(),
+                    "checker not implemented yet",
+                )
+            };
             (
                 "check".to_string(),
                 vec![args.file.to_string_lossy().to_string()],
@@ -324,18 +348,18 @@ fn run_typecheck(file: &Path, io_error: Option<&String>) -> CheckResult {
 
     let frontend = SimpleFrontend::default();
     match frontend.parse_and_typecheck(&source, &file.to_string_lossy()) {
-        Ok(_) => CheckResult {
-            name: "typecheck".to_string(),
-            model: None,
-            target: None,
-            status: Status::Pass,
-            reason: None,
-            counterexample: None,
-            stats: Some(Stats {
-                states: None,
-                transitions: None,
-            }),
-        },
+        Ok(output) => {
+            let stats = build_stats(&output.ir);
+            CheckResult {
+                name: "typecheck".to_string(),
+                model: None,
+                target: None,
+                status: Status::Pass,
+                reason: None,
+                counterexample: None,
+                stats: Some(stats),
+            }
+        }
         Err(err) => {
             let (status, reason_kind) = match err.kind {
                 FrontendErrorKind::UnsupportedSyntax => {
@@ -360,6 +384,22 @@ fn run_typecheck(file: &Path, io_error: Option<&String>) -> CheckResult {
             }
         }
     }
+}
+
+fn build_stats(module: &cspx_core::ir::Module) -> Stats {
+    let provider = match SimpleTransitionProvider::from_module(module) {
+        Ok(provider) => provider,
+        Err(_) => {
+            return Stats {
+                states: None,
+                transitions: None,
+            }
+        }
+    };
+
+    let mut store = InMemoryStateStore::new();
+    let mut queue = VecWorkQueue::new();
+    explore(&provider, &mut store, &mut queue)
 }
 
 fn build_stub_check_result(
@@ -417,6 +457,67 @@ fn error_check(
             states: None,
             transitions: None,
         }),
+    }
+}
+
+fn run_deadlock_check(file: &Path, io_error: Option<&String>, assertion: &str) -> CheckResult {
+    if let Some(message) = io_error {
+        return error_check(
+            "check",
+            None,
+            Some(assertion.to_string()),
+            ReasonKind::InvalidInput,
+            message.clone(),
+        );
+    }
+
+    let source = match fs::read_to_string(file) {
+        Ok(source) => source,
+        Err(err) => {
+            return error_check(
+                "check",
+                None,
+                Some(assertion.to_string()),
+                ReasonKind::InvalidInput,
+                format!("{}: {err}", file.display()),
+            )
+        }
+    };
+
+    let frontend = SimpleFrontend::default();
+    match frontend.parse_and_typecheck(&source, &file.to_string_lossy()) {
+        Ok(output) => {
+            let checker = DeadlockChecker::default();
+            let request = CheckRequest {
+                command: cspx_core::check::CheckCommand::Check,
+                model: None,
+                target: Some(assertion.to_string()),
+            };
+            checker.check(&request, &output.ir)
+        }
+        Err(err) => {
+            let (status, reason_kind) = match err.kind {
+                FrontendErrorKind::UnsupportedSyntax => {
+                    (Status::Unsupported, ReasonKind::UnsupportedSyntax)
+                }
+                FrontendErrorKind::InvalidInput => (Status::Error, ReasonKind::InvalidInput),
+            };
+            CheckResult {
+                name: "check".to_string(),
+                model: None,
+                target: Some(assertion.to_string()),
+                status,
+                reason: Some(Reason {
+                    kind: reason_kind,
+                    message: Some(err.to_string()),
+                }),
+                counterexample: None,
+                stats: Some(Stats {
+                    states: None,
+                    transitions: None,
+                }),
+            }
+        }
     }
 }
 
