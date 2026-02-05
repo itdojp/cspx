@@ -431,7 +431,10 @@ fn check_matches(expect: &CheckExpect, actual: &JsonValue) -> bool {
             return false;
         };
         if let Some(kind) = &reason.kind {
-            let actual_kind = reason_obj.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+            let actual_kind = reason_obj
+                .get("kind")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             if actual_kind.is_empty() || !match_string(actual_kind, kind) {
                 return false;
             }
@@ -548,10 +551,7 @@ fn stats_matches(expect: &StatsExpect, actual: Option<&JsonValue>) -> bool {
         return false;
     };
     if let Some(states) = &expect.states {
-        let actual_states = obj
-            .get("states")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(-1);
+        let actual_states = obj.get("states").and_then(|v| v.as_i64()).unwrap_or(-1);
         if actual_states < 0 || !match_int(actual_states, states) {
             return false;
         }
@@ -614,37 +614,25 @@ fn span_matches(expect: &SpanConstraint, actual: &JsonValue) -> bool {
         }
     }
     if let Some(start_line) = &expect.start_line {
-        let actual_start = obj
-            .get("start_line")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(-1);
+        let actual_start = obj.get("start_line").and_then(|v| v.as_i64()).unwrap_or(-1);
         if actual_start < 0 || !match_int(actual_start, start_line) {
             return false;
         }
     }
     if let Some(start_col) = &expect.start_col {
-        let actual_start = obj
-            .get("start_col")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(-1);
+        let actual_start = obj.get("start_col").and_then(|v| v.as_i64()).unwrap_or(-1);
         if actual_start < 0 || !match_int(actual_start, start_col) {
             return false;
         }
     }
     if let Some(end_line) = &expect.end_line {
-        let actual_end = obj
-            .get("end_line")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(-1);
+        let actual_end = obj.get("end_line").and_then(|v| v.as_i64()).unwrap_or(-1);
         if actual_end < 0 || !match_int(actual_end, end_line) {
             return false;
         }
     }
     if let Some(end_col) = &expect.end_col {
-        let actual_end = obj
-            .get("end_col")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(-1);
+        let actual_end = obj.get("end_col").and_then(|v| v.as_i64()).unwrap_or(-1);
         if actual_end < 0 || !match_int(actual_end, end_col) {
             return false;
         }
@@ -781,10 +769,7 @@ fn run_problem(
 ) -> Result<ProblemResult> {
     let expect = load_expect(problem, expect_schema)?;
     let run = &problem.spec.run;
-    let repeat = expect
-        .repeat
-        .or(run.repeat)
-        .unwrap_or(1);
+    let repeat = expect.repeat.or(run.repeat).unwrap_or(1);
     if expect.repeat.is_some() && run.repeat.is_some() && expect.repeat != run.repeat {
         eprintln!(
             "warning: repeat override (problem {}, expect={}, run={})",
@@ -833,9 +818,7 @@ fn run_problem(
     }
     errors.extend(evaluate_compare(&expect, &outcomes, &problem.spec.id));
 
-    let report_path = out_root
-        .join(&problem.spec.id)
-        .join("report.txt");
+    let report_path = out_root.join(&problem.spec.id).join("report.txt");
     if errors.is_empty() {
         fs::write(&report_path, "PASS\n")?;
         Ok(ProblemResult::Pass)
