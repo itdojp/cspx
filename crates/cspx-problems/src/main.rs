@@ -182,7 +182,8 @@ fn load_problem_schema(root: &Path) -> Result<JSONSchema> {
         .with_context(|| format!("read {}", schema_path.display()))?;
     let schema_json: JsonValue =
         serde_json::from_str(&schema_text).context("parse problem schema")?;
-    JSONSchema::compile(&schema_json).context("compile problem schema")
+    let schema_json = Box::leak(Box::new(schema_json));
+    JSONSchema::compile(schema_json).context("compile problem schema")
 }
 
 fn load_expect_schema(root: &Path) -> Result<JSONSchema> {
@@ -191,7 +192,8 @@ fn load_expect_schema(root: &Path) -> Result<JSONSchema> {
         .with_context(|| format!("read {}", schema_path.display()))?;
     let schema_json: JsonValue =
         serde_json::from_str(&schema_text).context("parse expect schema")?;
-    JSONSchema::compile(&schema_json).context("compile expect schema")
+    let schema_json = Box::leak(Box::new(schema_json));
+    JSONSchema::compile(schema_json).context("compile expect schema")
 }
 
 fn load_problems(problems_dir: &Path, schema: &JSONSchema) -> Result<Vec<Problem>> {
