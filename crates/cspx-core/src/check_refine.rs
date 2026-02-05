@@ -129,10 +129,7 @@ fn build_stats(module: &Module) -> Stats {
     }
 }
 
-fn trace_refines(
-    spec: &SimpleTransitionProvider,
-    impl_: &SimpleTransitionProvider,
-) -> bool {
+fn trace_refines(spec: &SimpleTransitionProvider, impl_: &SimpleTransitionProvider) -> bool {
     let mut queue = VecDeque::new();
     let mut visited = HashSet::new();
     let initial = (impl_.initial_state(), spec.initial_state());
@@ -168,10 +165,7 @@ fn trace_refines(
     true
 }
 
-fn failures_refines(
-    spec: &SimpleTransitionProvider,
-    impl_: &SimpleTransitionProvider,
-) -> bool {
+fn failures_refines(spec: &SimpleTransitionProvider, impl_: &SimpleTransitionProvider) -> bool {
     trace_refines(spec, impl_)
 }
 
