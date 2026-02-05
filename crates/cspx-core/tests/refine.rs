@@ -62,6 +62,8 @@ fn refinement_mismatch_fails() {
     let input = RefinementInput { spec, impl_ };
     let result = checker.check(&request, &input);
 
-    assert_eq!(result.status, cspx_core::types::Status::Fail);
-    assert!(result.counterexample.is_some());
+    assert_eq!(result.status, cspx_core::types::Status::Error);
+    assert!(result.counterexample.is_none());
+    let reason = result.reason.expect("reason");
+    assert_eq!(reason.kind, cspx_core::types::ReasonKind::InvalidInput);
 }
