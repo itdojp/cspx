@@ -1,0 +1,9 @@
+-- P104: components are deadlock-free, but composition deadlocks
+channel a
+channel b
+P = a -> P
+Q = b -> Q
+System = P [|{|a,b|}|] Q
+assert P :[deadlock free [F]]
+assert Q :[deadlock free [F]]
+assert System :[deadlock free [F]]
