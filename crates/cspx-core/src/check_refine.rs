@@ -2,6 +2,7 @@ use crate::check::{CheckRequest, CheckResult, Checker, RefinementModel};
 use crate::explain::Explainer;
 use crate::explain_simple::BasicExplainer;
 use crate::ir::Module;
+use crate::lts::TransitionProvider;
 use crate::minimize::Minimizer;
 use crate::minimize_simple::IdentityMinimizer;
 use crate::types::{
@@ -140,7 +141,10 @@ fn trace_refines(
 
     while let Some((impl_state, spec_state)) = queue.pop_front() {
         let impl_transitions = impl_.transitions(&impl_state);
-        let mut spec_by_label: HashMap<String, Vec<_>> = HashMap::new();
+        let mut spec_by_label: HashMap<
+            String,
+            Vec<<SimpleTransitionProvider as TransitionProvider>::State>,
+        > = HashMap::new();
         for (transition, next_state) in spec.transitions(&spec_state) {
             spec_by_label
                 .entry(transition.label)
