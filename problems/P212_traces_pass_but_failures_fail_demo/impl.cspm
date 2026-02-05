@@ -1,0 +1,4 @@
+-- P212: impl with subset
+channel a
+channel b
+IMPL = a -> STOP

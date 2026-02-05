@@ -1,0 +1,6 @@
+id: P200
+title: traces refinement pass (subset)
+suite: fast
+tags: [refinement, traces, fast]
+run:
+  cmd: ["cspx", "refine", "--model", "T", "spec.cspm", "impl.cspm", "--format", "json"]

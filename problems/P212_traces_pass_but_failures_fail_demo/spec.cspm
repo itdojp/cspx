@@ -1,0 +1,4 @@
+-- P212: T passes but F fails (demo)
+channel a
+channel b
+SPEC = a -> STOP [] b -> STOP

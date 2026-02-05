@@ -1,0 +1,4 @@
+-- P200: traces refinement pass (impl subset)
+channel a
+channel b
+SPEC = a -> STOP [] b -> STOP
