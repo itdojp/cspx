@@ -28,12 +28,18 @@ fn run_json(args: &[&str]) -> Value {
     serde_json::from_str(&stdout).expect("parse json")
 }
 
+fn assert_schema_ok(schema: &JSONSchema, value: &Value) {
+    if let Err(errors) = schema.validate(value) {
+        let details: Vec<String> = errors.map(|err| err.to_string()).collect();
+        panic!("schema validation failed:\n{}", details.join("\n"));
+    }
+}
+
 #[test]
 fn schema_typecheck() {
     let schema = load_schema();
     let actual = run_json(&["typecheck", "tests/cases/ok.cspm", "--format", "json"]);
-    let result = schema.validate(&actual);
-    assert!(result.is_ok());
+    assert_schema_ok(&schema, &actual);
 }
 
 #[test]
@@ -47,8 +53,7 @@ fn schema_check_assert() {
         "--format",
         "json",
     ]);
-    let result = schema.validate(&actual);
-    assert!(result.is_ok());
+    assert_schema_ok(&schema, &actual);
 }
 
 #[test]
@@ -63,6 +68,5 @@ fn schema_refine() {
         "--format",
         "json",
     ]);
-    let result = schema.validate(&actual);
-    assert!(result.is_ok());
+    assert_schema_ok(&schema, &actual);
 }
