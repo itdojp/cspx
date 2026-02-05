@@ -129,8 +129,8 @@ fn load_problems(problems_dir: &Path, schema: &JSONSchema) -> Result<Vec<Problem
 }
 
 fn filter_problems<'a>(problems: &'a [Problem], args: &Args) -> Result<Vec<&'a Problem>> {
-    let only_ids: Vec<String> = args.only.iter().cloned().collect();
-    let only_dirs: Vec<PathBuf> = args.only_dir.iter().cloned().collect();
+    let only_ids = &args.only;
+    let only_dirs = &args.only_dir;
     let use_only = !only_ids.is_empty() || !only_dirs.is_empty();
     let suite = match args.suite {
         Suite::Fast => "fast",
