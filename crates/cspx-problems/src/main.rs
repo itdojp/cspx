@@ -802,8 +802,7 @@ fn run_problem(
     let mut outcomes = Vec::new();
     for idx in 1..=repeat {
         let out_dir = out_root.join(&problem.spec.id).join(format!("run-{}", idx));
-        fs::create_dir_all(&out_dir)
-            .with_context(|| format!("create {}", out_dir.display()))?;
+        fs::create_dir_all(&out_dir).with_context(|| format!("create {}", out_dir.display()))?;
 
         let outcome = execute_run(problem, args)?;
         fs::write(out_dir.join("stdout.txt"), &outcome.stdout)?;
@@ -889,13 +888,9 @@ fn execute_run(problem: &Problem, args: &Args) -> Result<RunOutcome> {
     }
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
 
-    let mut child = command.spawn().with_context(|| {
-        format!(
-            "spawn command: {} (cwd={})",
-            cmd.join(" "),
-            cwd.display()
-        )
-    })?;
+    let mut child = command
+        .spawn()
+        .with_context(|| format!("spawn command: {} (cwd={})", cmd.join(" "), cwd.display()))?;
     let exit_code = if let Some(timeout) = timeout {
         match child.wait_timeout(timeout)? {
             Some(status) => status.code().unwrap_or(1),
