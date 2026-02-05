@@ -14,7 +14,7 @@ jobs:
       - run: cargo fmt -- --check
       - run: cargo clippy -- -D warnings
       - run: cargo test
-      - run: cargo build -p cspx-cli
+      - run: cargo build -p cspx
       - run: scripts/run-problems --suite fast --cspx target/debug/cspx
       - uses: actions/upload-artifact@v4
         if: failure()

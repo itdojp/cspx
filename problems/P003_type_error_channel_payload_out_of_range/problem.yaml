@@ -1,5 +1,5 @@
 id: P003
-title: invalid identifier (invalid input)
+title: type error (payload out of range)
 suite: fast
 tags: [typecheck, fast]
 run:

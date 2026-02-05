@@ -2,3 +2,6 @@
 channel a
 channel b
 SPEC = a -> STOP [] b -> STOP
+IMPL = a -> STOP
+assert SPEC [T= IMPL
+assert SPEC [F= IMPL

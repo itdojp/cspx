@@ -1,0 +1,4 @@
+-- P002: undefined process name
+channel a
+P = a -> STOP
+System = P ||| Q

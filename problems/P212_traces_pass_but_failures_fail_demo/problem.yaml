@@ -3,4 +3,4 @@ title: T passes but F fails (demo)
 suite: fast
 tags: [refinement, traces, failures, fast]
 run:
-  cmd: ["cspx", "refine", "--model", "T", "spec.cspm", "impl.cspm", "--format", "json"]
+  cmd: ["cspx", "check", "--all-assertions", "model.cspm", "--format", "json"]

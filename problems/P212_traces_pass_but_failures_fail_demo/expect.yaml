@@ -1,7 +1,8 @@
 status:
   in: ["unsupported", "error"]
 checks:
-  - name: refine
+  - name:
+      in: ["check", "refine"]
     status:
       in: ["unsupported", "error"]
     reason:
