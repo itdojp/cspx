@@ -1,0 +1,6 @@
+id: P001
+title: syntax error (missing ->)
+suite: fast
+tags: [typecheck, fast]
+run:
+  cmd: ["cspx", "typecheck", "model.cspm", "--format", "json"]

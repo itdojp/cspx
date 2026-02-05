@@ -1,0 +1,6 @@
+id: P004
+title: unsupported feature (datatype)
+suite: fast
+tags: [typecheck, fast]
+run:
+  cmd: ["cspx", "typecheck", "model.cspm", "--format", "json"]

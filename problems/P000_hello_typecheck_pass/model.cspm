@@ -1,0 +1,3 @@
+-- P000: minimal valid CSPM
+channel a
+P = a -> STOP
