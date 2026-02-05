@@ -8,6 +8,26 @@ pub enum SimpleState {
     Stop,
 }
 
+#[derive(Debug, Default, Clone, Copy)]
+pub struct SimpleStateCodec;
+
+impl crate::state_codec::StateCodec<SimpleState> for SimpleStateCodec {
+    fn encode(&self, state: &SimpleState) -> Vec<u8> {
+        match state {
+            SimpleState::Stop => b"STOP".to_vec(),
+        }
+    }
+
+    fn decode(&self, bytes: &[u8]) -> Result<SimpleState, crate::state_codec::StateCodecError> {
+        match bytes {
+            b"STOP" => Ok(SimpleState::Stop),
+            _ => Err(crate::state_codec::StateCodecError::new(
+                "unknown SimpleState encoding",
+            )),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SimpleTransitionProvider {
     initial: SimpleState,

@@ -25,8 +25,8 @@ impl<S> StateStore<S> for InMemoryStateStore<S>
 where
     S: Eq + Hash,
 {
-    fn insert(&mut self, state: S) -> bool {
-        self.states.insert(state)
+    fn insert(&mut self, state: S) -> std::io::Result<bool> {
+        Ok(self.states.insert(state))
     }
 
     fn len(&self) -> usize {

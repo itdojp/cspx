@@ -3,8 +3,8 @@ use chrono::{SecondsFormat, Utc};
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use cspx_core::{
     explore, CheckRequest, CheckResult, Checker, DeadlockChecker, Frontend, FrontendErrorKind,
-    InMemoryStateStore, Reason, ReasonKind, SimpleFrontend, SimpleTransitionProvider, Stats,
-    Status, VecWorkQueue,
+    InMemoryStateStore, Reason, ReasonKind, RefinementChecker, RefinementInput, SimpleFrontend,
+    SimpleTransitionProvider, Stats, Status, VecWorkQueue,
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -238,17 +238,7 @@ fn execute(cli: &Cli) -> Result<(Status, i32, CheckResult, Vec<InputInfo>, Invoc
         }
         Command::Refine(args) => {
             let (inputs, io_error) = build_inputs(&[args.spec.clone(), args.impl_.clone()]);
-            let check = build_stub_check_result(
-                "refine",
-                Some(args.model.as_str().to_string()),
-                Some(format!(
-                    "{} {}",
-                    args.spec.to_string_lossy(),
-                    args.impl_.to_string_lossy()
-                )),
-                io_error.as_ref(),
-                "refinement not implemented yet",
-            );
+            let check = run_refine_check(args, io_error.as_ref());
             (
                 "refine".to_string(),
                 vec![
@@ -399,7 +389,13 @@ fn build_stats(module: &cspx_core::ir::Module) -> Stats {
 
     let mut store = InMemoryStateStore::new();
     let mut queue = VecWorkQueue::new();
-    explore(&provider, &mut store, &mut queue)
+    match explore(&provider, &mut store, &mut queue) {
+        Ok(stats) => stats,
+        Err(_) => Stats {
+            states: None,
+            transitions: None,
+        },
+    }
 }
 
 fn build_stub_check_result(
@@ -519,6 +515,137 @@ fn run_deadlock_check(file: &Path, io_error: Option<&String>, assertion: &str) -
             }
         }
     }
+}
+
+fn run_refine_check(args: &RefineArgs, io_error: Option<&String>) -> CheckResult {
+    if let Some(message) = io_error {
+        return error_check(
+            "refine",
+            Some(args.model.as_str().to_string()),
+            Some(format!(
+                "{} {}",
+                args.spec.to_string_lossy(),
+                args.impl_.to_string_lossy()
+            )),
+            ReasonKind::InvalidInput,
+            message.clone(),
+        );
+    }
+
+    let spec_source = match fs::read_to_string(&args.spec) {
+        Ok(source) => source,
+        Err(err) => {
+            return error_check(
+                "refine",
+                Some(args.model.as_str().to_string()),
+                Some(format!(
+                    "{} {}",
+                    args.spec.to_string_lossy(),
+                    args.impl_.to_string_lossy()
+                )),
+                ReasonKind::InvalidInput,
+                format!("{}: {err}", args.spec.display()),
+            )
+        }
+    };
+    let impl_source = match fs::read_to_string(&args.impl_) {
+        Ok(source) => source,
+        Err(err) => {
+            return error_check(
+                "refine",
+                Some(args.model.as_str().to_string()),
+                Some(format!(
+                    "{} {}",
+                    args.spec.to_string_lossy(),
+                    args.impl_.to_string_lossy()
+                )),
+                ReasonKind::InvalidInput,
+                format!("{}: {err}", args.impl_.display()),
+            )
+        }
+    };
+
+    let frontend = SimpleFrontend::default();
+    let spec_ir = match frontend.parse_and_typecheck(&spec_source, &args.spec.to_string_lossy()) {
+        Ok(output) => output.ir,
+        Err(err) => {
+            let (status, reason_kind) = match err.kind {
+                FrontendErrorKind::UnsupportedSyntax => {
+                    (Status::Unsupported, ReasonKind::UnsupportedSyntax)
+                }
+                FrontendErrorKind::InvalidInput => (Status::Error, ReasonKind::InvalidInput),
+            };
+            return CheckResult {
+                name: "refine".to_string(),
+                model: Some(args.model.as_str().to_string()),
+                target: Some(format!(
+                    "{} {}",
+                    args.spec.to_string_lossy(),
+                    args.impl_.to_string_lossy()
+                )),
+                status,
+                reason: Some(Reason {
+                    kind: reason_kind,
+                    message: Some(err.to_string()),
+                }),
+                counterexample: None,
+                stats: Some(Stats {
+                    states: None,
+                    transitions: None,
+                }),
+            };
+        }
+    };
+    let impl_ir = match frontend.parse_and_typecheck(&impl_source, &args.impl_.to_string_lossy()) {
+        Ok(output) => output.ir,
+        Err(err) => {
+            let (status, reason_kind) = match err.kind {
+                FrontendErrorKind::UnsupportedSyntax => {
+                    (Status::Unsupported, ReasonKind::UnsupportedSyntax)
+                }
+                FrontendErrorKind::InvalidInput => (Status::Error, ReasonKind::InvalidInput),
+            };
+            return CheckResult {
+                name: "refine".to_string(),
+                model: Some(args.model.as_str().to_string()),
+                target: Some(format!(
+                    "{} {}",
+                    args.spec.to_string_lossy(),
+                    args.impl_.to_string_lossy()
+                )),
+                status,
+                reason: Some(Reason {
+                    kind: reason_kind,
+                    message: Some(err.to_string()),
+                }),
+                counterexample: None,
+                stats: Some(Stats {
+                    states: None,
+                    transitions: None,
+                }),
+            };
+        }
+    };
+
+    let checker = RefinementChecker::default();
+    let request = CheckRequest {
+        command: cspx_core::check::CheckCommand::Refine,
+        model: Some(match args.model {
+            RefinementModel::T => cspx_core::check::RefinementModel::T,
+            RefinementModel::F => cspx_core::check::RefinementModel::F,
+            RefinementModel::FD => cspx_core::check::RefinementModel::FD,
+        }),
+        target: Some(format!(
+            "{} {}",
+            args.spec.to_string_lossy(),
+            args.impl_.to_string_lossy()
+        )),
+    };
+    let input = RefinementInput {
+        spec: spec_ir,
+        impl_: impl_ir,
+    };
+    checker.check(&request, &input)
 }
 
 fn emit_json(result: &ResultJson, output: Option<&Path>) -> Result<()> {
