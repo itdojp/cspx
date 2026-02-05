@@ -1,0 +1,6 @@
+id: P100
+title: deadlock-free minimal rendezvous
+suite: fast
+tags: [deadlock, assertion, fast]
+run:
+  cmd: ["cspx", "check", "--assert", "deadlock free", "model.cspm", "--format", "json"]

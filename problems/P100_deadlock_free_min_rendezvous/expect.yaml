@@ -1,0 +1,9 @@
+status:
+  in: ["unsupported", "error"]
+checks:
+  - name: check
+    status:
+      in: ["unsupported", "error"]
+    reason:
+      kind:
+        in: ["unsupported_syntax", "not_implemented", "invalid_input"]
