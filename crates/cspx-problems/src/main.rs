@@ -841,7 +841,12 @@ fn execute_run(problem: &Problem, args: &Args) -> Result<RunOutcome> {
     let mut cmd = run.cmd.clone();
     if let Some(cspx) = &args.cspx {
         if cmd.first().map(|s| s == "cspx").unwrap_or(false) {
-            cmd[0] = cspx.to_string_lossy().to_string();
+            let cspx_path = if cspx.is_absolute() {
+                cspx.clone()
+            } else {
+                std::env::current_dir().context("current dir")?.join(cspx)
+            };
+            cmd[0] = cspx_path.to_string_lossy().to_string();
         }
     }
     let cwd = if let Some(cwd) = &run.cwd {
