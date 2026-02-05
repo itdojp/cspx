@@ -79,7 +79,7 @@ fn main() -> Result<()> {
 
     let out_root = problems_dir.join(".out");
     for problem in filtered {
-        run_problem(&out_root, &problem, &args)?;
+        run_problem(&out_root, problem, &args)?;
     }
 
     Ok(())
