@@ -12,8 +12,8 @@
   "inputs": [
     { "path": "tests/cases/ok.cspm", "sha256": "2af183be253fd571e13dd3d310357f3a1ccc7b18502a83ed918e0b88a1e5355f" }
   ],
-  "status": "unsupported",
-  "exit_code": 3,
+  "status": "pass",
+  "exit_code": 0,
   "started_at": "1970-01-01T00:00:00Z",
   "finished_at": "1970-01-01T00:00:00Z",
   "duration_ms": 0,
@@ -22,8 +22,7 @@
       "name": "typecheck",
       "model": null,
       "target": null,
-      "status": "unsupported",
-      "reason": { "kind": "not_implemented", "message": "typechecker not implemented yet" },
+      "status": "pass",
       "counterexample": null,
       "stats": { "states": null, "transitions": null }
     }

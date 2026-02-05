@@ -18,5 +18,11 @@ cargo build
 cargo test
 ```
 
+## Docker（任意）
+```sh
+docker build -t cspx:local .
+docker run --rm cspx:local --version
+```
+
 ## ライセンス
 Apache-2.0
