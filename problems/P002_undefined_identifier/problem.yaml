@@ -1,5 +1,5 @@
 id: P002
-title: duplicate identifier (invalid input)
+title: undefined identifier
 suite: fast
 tags: [typecheck, fast]
 run:
