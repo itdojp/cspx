@@ -1,0 +1,5 @@
+-- P121: tau-loop divergence via hiding
+channel a
+Loop = a -> Loop
+Div = Loop \\ {|a|}
+assert Div :[divergence free [FD]]
