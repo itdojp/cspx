@@ -1,0 +1,6 @@
+id: P131
+title: nondeterminism via internal choice
+suite: fast
+tags: [determinism, assertion, fast]
+run:
+  cmd: ["cspx", "check", "--assert", "deterministic", "model.cspm", "--format", "json"]

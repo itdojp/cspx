@@ -1,0 +1,4 @@
+-- P130: deterministic process
+channel a
+P = a -> P
+assert P :[deterministic [FD]]

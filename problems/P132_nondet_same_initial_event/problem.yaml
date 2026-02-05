@@ -1,0 +1,6 @@
+id: P132
+title: nondeterminism same initial event
+suite: fast
+tags: [determinism, assertion, fast]
+run:
+  cmd: ["cspx", "check", "--assert", "deterministic", "model.cspm", "--format", "json"]
