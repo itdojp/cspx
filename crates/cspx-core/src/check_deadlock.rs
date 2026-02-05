@@ -6,7 +6,7 @@ use crate::types::{
     Counterexample, CounterexampleEvent, CounterexampleType, Reason, ReasonKind, SourceSpan, Stats,
     Status,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 #[derive(Debug, Default)]
 pub struct DeadlockChecker;
@@ -46,18 +46,19 @@ fn deadlock_free_check(
             String,
         )>,
     > = HashMap::new();
-    let mut queue: Vec<<SimpleTransitionProvider as TransitionProvider>::State> = Vec::new();
+    let mut queue: VecDeque<<SimpleTransitionProvider as TransitionProvider>::State> =
+        VecDeque::new();
     let mut states: u64 = 0;
     let mut transitions: u64 = 0;
 
     let initial = provider.initial_state();
     visited.insert(initial.clone(), None);
-    queue.push(initial.clone());
+    queue.push_back(initial.clone());
     states += 1;
 
     let mut deadlock_state = None;
 
-    while let Some(state) = queue.pop() {
+    while let Some(state) = queue.pop_front() {
         let next = provider.transitions(&state);
         transitions += next.len() as u64;
         if next.is_empty() {
@@ -72,7 +73,7 @@ fn deadlock_free_check(
                 next_state.clone(),
                 Some((state.clone(), transition.label.clone())),
             );
-            queue.push(next_state);
+            queue.push_back(next_state);
             states += 1;
         }
     }
