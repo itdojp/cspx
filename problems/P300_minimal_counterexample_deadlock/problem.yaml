@@ -1,0 +1,6 @@
+id: P300
+title: minimal counterexample (deadlock)
+suite: fast
+tags: [deadlock, counterexample, fast]
+run:
+  cmd: ["cspx", "check", "--assert", "deadlock free", "model.cspm", "--format", "json"]

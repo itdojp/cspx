@@ -1,0 +1,7 @@
+id: P310
+title: timeout behavior (bench)
+suite: bench
+tags: [timeout, bench]
+run:
+  cmd: ["cspx", "check", "--assert", "deadlock free", "model.cspm", "--format", "json"]
+  timeout_ms: 10
