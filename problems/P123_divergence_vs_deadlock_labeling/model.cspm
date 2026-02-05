@@ -1,0 +1,6 @@
+-- P123: classification check (divergence vs deadlock)
+channel a
+Loop = a -> Loop
+Div = Loop \\ {|a|}
+assert Div :[deadlock free [F]]
+assert Div :[divergence free [FD]]

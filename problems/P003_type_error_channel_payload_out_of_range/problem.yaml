@@ -1,0 +1,6 @@
+id: P003
+title: type error (payload out of range)
+suite: fast
+tags: [typecheck, fast]
+run:
+  cmd: ["cspx", "typecheck", "model.cspm", "--format", "json"]

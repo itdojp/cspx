@@ -1,0 +1,4 @@
+-- P004: unsupported feature (datatype)
+datatype Msg = A | B
+channel ch : Msg
+P = ch.A -> STOP

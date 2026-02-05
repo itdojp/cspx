@@ -1,0 +1,4 @@
+-- P210: impl identical
+channel a
+channel b
+IMPL = a -> STOP [] b -> STOP

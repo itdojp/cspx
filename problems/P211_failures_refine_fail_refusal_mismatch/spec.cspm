@@ -1,0 +1,4 @@
+-- P211: failures refinement fail (refusal mismatch)
+channel a
+channel b
+SPEC = a -> STOP [] b -> STOP

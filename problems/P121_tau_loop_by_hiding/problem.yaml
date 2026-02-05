@@ -1,0 +1,6 @@
+id: P121
+title: tau-loop divergence via hiding
+suite: fast
+tags: [divergence, assertion, fast]
+run:
+  cmd: ["cspx", "check", "--assert", "divergence free", "model.cspm", "--format", "json"]

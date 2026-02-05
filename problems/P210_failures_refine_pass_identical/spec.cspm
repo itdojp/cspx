@@ -1,0 +1,4 @@
+-- P210: failures refinement pass (identical)
+channel a
+channel b
+SPEC = a -> STOP [] b -> STOP

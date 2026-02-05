@@ -1,0 +1,6 @@
+id: P102
+title: deadlock at start due to sync mismatch
+suite: fast
+tags: [deadlock, assertion, fast]
+run:
+  cmd: ["cspx", "check", "--assert", "deadlock free", "model.cspm", "--format", "json"]

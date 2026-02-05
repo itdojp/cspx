@@ -1,0 +1,5 @@
+-- P131: nondeterminism via internal choice
+channel a
+channel b
+P = (a -> STOP) |~| (a -> b -> STOP)
+assert P :[deterministic [FD]]

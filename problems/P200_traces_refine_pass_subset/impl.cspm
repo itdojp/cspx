@@ -1,0 +1,4 @@
+-- P200: impl subset
+channel a
+channel b
+IMPL = a -> STOP

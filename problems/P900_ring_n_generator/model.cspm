@@ -1,0 +1,5 @@
+-- P900: ring generator placeholder
+-- TODO: replace with generated model
+channel a
+P = a -> P
+assert P :[deadlock free [F]]

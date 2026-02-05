@@ -1,0 +1,6 @@
+id: P201
+title: traces refinement fail (extra trace)
+suite: fast
+tags: [refinement, traces, fast]
+run:
+  cmd: ["cspx", "refine", "--model", "T", "spec.cspm", "impl.cspm", "--format", "json"]

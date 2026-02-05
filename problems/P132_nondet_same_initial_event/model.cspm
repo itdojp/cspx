@@ -1,0 +1,5 @@
+-- P132: nondeterminism with same initial event
+channel a
+channel b
+P = (a -> b -> STOP) |~| (a -> STOP)
+assert P :[deterministic [FD]]

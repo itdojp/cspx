@@ -1,0 +1,4 @@
+-- P211: impl can refuse b
+channel a
+channel b
+IMPL = a -> STOP

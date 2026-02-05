@@ -1,0 +1,6 @@
+id: P120
+title: divergence-free baseline
+suite: fast
+tags: [divergence, assertion, fast]
+run:
+  cmd: ["cspx", "check", "--assert", "divergence free", "model.cspm", "--format", "json"]

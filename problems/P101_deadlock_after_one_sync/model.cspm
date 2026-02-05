@@ -1,0 +1,6 @@
+-- P101: deadlock after one communication
+channel ch : {0..1}
+Sender = ch!1 -> STOP
+Receiver = ch?x -> Receiver
+System = Sender [|{|ch|}|] Receiver
+assert System :[deadlock free [F]]

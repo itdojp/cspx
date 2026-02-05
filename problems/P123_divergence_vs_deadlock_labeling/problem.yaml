@@ -1,0 +1,6 @@
+id: P123
+title: divergence vs deadlock labeling
+suite: fast
+tags: [divergence, deadlock, assertion, fast]
+run:
+  cmd: ["cspx", "check", "--assert", "divergence free", "model.cspm", "--format", "json"]

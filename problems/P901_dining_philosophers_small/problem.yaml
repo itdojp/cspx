@@ -1,0 +1,6 @@
+id: P901
+title: dining philosophers (small, bench placeholder)
+suite: bench
+tags: [bench, dining_philosophers]
+run:
+  cmd: ["cspx", "check", "--assert", "deadlock free", "model.cspm", "--format", "json"]
