@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "cspx expect schema v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "exit_code": { "$ref": "#/$defs/int_or_constraint" },
+    "status": { "$ref": "#/$defs/string_or_constraint" },
+    "checks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/check_expect" }
+    },
+    "repeat": { "type": "integer", "minimum": 1 },
+    "compare": { "$ref": "#/$defs/compare" }
+  },
+  "anyOf": [
+    { "required": ["exit_code"] },
+    { "required": ["status"] },
+    { "required": ["checks"] },
+    { "required": ["compare"] }
+  ],
+  "$defs": {
+    "int_constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "eq": { "type": "integer" },
+        "min": { "type": "integer" },
+        "max": { "type": "integer" },
+        "in": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "integer" }
+        }
+      }
+    },
+    "string_constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "eq": { "type": "string" },
+        "contains": { "type": "string" },
+        "regex": { "type": "string" },
+        "in": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "bool_constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "eq": { "type": "boolean" }
+      }
+    },
+    "int_or_constraint": {
+      "oneOf": [{ "type": "integer" }, { "$ref": "#/$defs/int_constraint" }]
+    },
+    "string_or_constraint": {
+      "oneOf": [{ "type": "string" }, { "$ref": "#/$defs/string_constraint" }]
+    },
+    "bool_or_constraint": {
+      "oneOf": [{ "type": "boolean" }, { "$ref": "#/$defs/bool_constraint" }]
+    },
+    "string_array_constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "contains": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" }
+        },
+        "equals": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "reason_expect": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "$ref": "#/$defs/string_or_constraint" },
+        "message": { "$ref": "#/$defs/string_or_constraint" }
+      }
+    },
+    "stats_expect": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "states": { "$ref": "#/$defs/int_or_constraint" },
+        "transitions": { "$ref": "#/$defs/int_or_constraint" }
+      }
+    },
+    "span_constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": { "$ref": "#/$defs/string_or_constraint" },
+        "start_line": { "$ref": "#/$defs/int_or_constraint" },
+        "start_col": { "$ref": "#/$defs/int_or_constraint" },
+        "end_line": { "$ref": "#/$defs/int_or_constraint" },
+        "end_col": { "$ref": "#/$defs/int_or_constraint" }
+      }
+    },
+    "counterexample_expect": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "present": { "type": "boolean" },
+        "trace_len": { "$ref": "#/$defs/int_constraint" },
+        "tags": { "$ref": "#/$defs/string_array_constraint" },
+        "is_minimized": { "$ref": "#/$defs/bool_or_constraint" },
+        "source_spans": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "any": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/span_constraint" }
+            }
+          }
+        }
+      }
+    },
+    "check_expect": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "$ref": "#/$defs/string_or_constraint" },
+        "target": { "$ref": "#/$defs/string_or_constraint" },
+        "model": { "$ref": "#/$defs/string_or_constraint" },
+        "status": { "$ref": "#/$defs/string_or_constraint" },
+        "reason": { "$ref": "#/$defs/reason_expect" },
+        "counterexample": { "$ref": "#/$defs/counterexample_expect" },
+        "stats": { "$ref": "#/$defs/stats_expect" }
+      }
+    },
+    "compare": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "enum": ["normalized_json_equal"] },
+        "ignore_fields": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}
