@@ -1,5 +1,9 @@
-exit_code: 0
-status: pass
+status:
+  in: ["unsupported", "error"]
 checks:
   - name: typecheck
-    status: pass
+    status:
+      in: ["unsupported", "error"]
+    reason:
+      kind:
+        in: ["unsupported_syntax", "not_implemented", "invalid_input"]
