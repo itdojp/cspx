@@ -156,10 +156,7 @@ fn parse_expr(expr: &str, span: Option<SourceSpan>) -> Result<Spanned<ProcessExp
 }
 
 fn split_assignment(line: &str) -> Option<(&str, &str)> {
-    let mut parts = line.splitn(2, '=');
-    let left = parts.next()?;
-    let right = parts.next()?;
-    Some((left, right))
+    line.split_once('=')
 }
 
 fn strip_comment(line: &str) -> &str {
