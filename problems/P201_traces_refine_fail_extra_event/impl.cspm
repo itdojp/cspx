@@ -1,0 +1,4 @@
+-- P201: impl has extra trace
+channel a
+channel b
+IMPL = a -> STOP [] b -> STOP

@@ -1,0 +1,6 @@
+id: P101
+title: deadlock after one sync
+suite: fast
+tags: [deadlock, assertion, fast]
+run:
+  cmd: ["cspx", "check", "--assert", "deadlock free", "model.cspm", "--format", "json"]

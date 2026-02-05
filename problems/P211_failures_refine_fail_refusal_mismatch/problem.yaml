@@ -1,0 +1,6 @@
+id: P211
+title: failures refinement fail (refusal mismatch)
+suite: fast
+tags: [refinement, failures, fast]
+run:
+  cmd: ["cspx", "refine", "--model", "F", "spec.cspm", "impl.cspm", "--format", "json"]

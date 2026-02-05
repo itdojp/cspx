@@ -1,0 +1,7 @@
+-- P102: deadlock at start due to sync-set mismatch
+channel ch : {0..1}
+channel ch2 : {0..1}
+Sender = ch!1 -> Sender
+Receiver = ch2?x -> Receiver
+System = Sender [|{|ch|}|] Receiver
+assert System :[deadlock free [F]]

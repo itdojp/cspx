@@ -1,0 +1,3 @@
+-- P001: syntax error (missing ->)
+channel a
+P = a STOP

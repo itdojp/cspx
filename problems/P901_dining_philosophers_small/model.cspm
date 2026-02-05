@@ -1,0 +1,7 @@
+-- P901: dining philosophers small (placeholder)
+channel fork : {0..2}
+PHIL0 = fork.0 -> fork.1 -> PHIL0
+PHIL1 = fork.1 -> fork.2 -> PHIL1
+PHIL2 = fork.2 -> fork.0 -> PHIL2
+System = PHIL0 || PHIL1 || PHIL2
+assert System :[deadlock free [F]]

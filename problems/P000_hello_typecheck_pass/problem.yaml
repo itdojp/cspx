@@ -1,0 +1,6 @@
+id: P000
+title: minimal valid CSPM
+suite: fast
+tags: [typecheck, fast]
+run:
+  cmd: ["cspx", "typecheck", "model.cspm", "--format", "json"]

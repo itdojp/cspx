@@ -1,0 +1,7 @@
+-- P301: counterexample span mapping
+channel a
+channel b
+P = a -> STOP
+Q = b -> STOP
+System = P [|{|a,b|}|] Q
+assert System :[deadlock free [F]]

@@ -1,0 +1,6 @@
+id: P122
+title: divergence after visible prefix
+suite: fast
+tags: [divergence, assertion, fast]
+run:
+  cmd: ["cspx", "check", "--assert", "divergence free", "model.cspm", "--format", "json"]

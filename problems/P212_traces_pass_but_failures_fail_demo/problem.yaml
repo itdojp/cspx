@@ -1,0 +1,6 @@
+id: P212
+title: T passes but F fails (demo)
+suite: fast
+tags: [refinement, traces, failures, fast]
+run:
+  cmd: ["cspx", "check", "--all-assertions", "model.cspm", "--format", "json"]
