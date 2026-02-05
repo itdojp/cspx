@@ -1,0 +1,6 @@
+id: P130
+title: deterministic pass
+suite: fast
+tags: [determinism, assertion, fast]
+run:
+  cmd: ["cspx", "check", "--assert", "deterministic", "model.cspm", "--format", "json"]
