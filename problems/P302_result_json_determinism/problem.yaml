@@ -1,0 +1,7 @@
+id: P302
+title: result json determinism
+suite: fast
+tags: [determinism, json, fast]
+run:
+  cmd: ["cspx", "typecheck", "model.cspm", "--format", "json"]
+  repeat: 2

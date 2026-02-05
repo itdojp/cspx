@@ -1,0 +1,5 @@
+status:
+  in: ["pass", "unsupported", "error"]
+repeat: 2
+compare:
+  kind: normalized_json_equal

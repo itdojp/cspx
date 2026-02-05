@@ -1,0 +1,6 @@
+-- P300: minimal counterexample deadlock
+channel ch : {0..1}
+Sender = ch!1 -> STOP
+Receiver = ch?x -> Receiver
+System = Sender [|{|ch|}|] Receiver
+assert System :[deadlock free [F]]

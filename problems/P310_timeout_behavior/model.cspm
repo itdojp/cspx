@@ -1,0 +1,4 @@
+-- P310: timeout behavior (bench)
+channel a
+P = a -> P
+assert P :[deadlock free [F]]
