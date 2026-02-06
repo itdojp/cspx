@@ -127,7 +127,7 @@ pub enum PropertyModel {
     FD,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RefinementOp {
     T,
     F,

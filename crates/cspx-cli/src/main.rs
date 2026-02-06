@@ -133,6 +133,8 @@ struct InputInfo {
     sha256: String,
 }
 
+type ExecuteOutput = (Status, i32, Vec<CheckResult>, Vec<InputInfo>, Invocation);
+
 fn main() {
     let cli = Cli::parse();
     let exit_code = match run(cli) {
@@ -149,7 +151,7 @@ fn run(cli: Cli) -> Result<i32> {
     let started_at = Utc::now();
     let timer = Instant::now();
 
-    let (status, exit_code, check, inputs, invocation) = execute(&cli)?;
+    let (status, exit_code, checks, inputs, invocation) = execute(&cli)?;
 
     let finished_at = Utc::now();
     let duration_ms = timer.elapsed().as_millis() as u64;
@@ -168,7 +170,7 @@ fn run(cli: Cli) -> Result<i32> {
         started_at: started_at.to_rfc3339_opts(SecondsFormat::Secs, true),
         finished_at: finished_at.to_rfc3339_opts(SecondsFormat::Secs, true),
         duration_ms,
-        checks: vec![check],
+        checks,
     };
 
     match cli.format {
@@ -179,56 +181,47 @@ fn run(cli: Cli) -> Result<i32> {
     Ok(exit_code)
 }
 
-fn execute(cli: &Cli) -> Result<(Status, i32, CheckResult, Vec<InputInfo>, Invocation)> {
-    let (command, args, inputs, check) = match &cli.command {
+fn execute(cli: &Cli) -> Result<ExecuteOutput> {
+    let (command, args, inputs, checks) = match &cli.command {
         Command::Typecheck { file } => {
             let (inputs, io_error) = build_inputs(std::slice::from_ref(file));
-            let check = run_typecheck(file, io_error.as_ref());
+            let checks = vec![run_typecheck(file, io_error.as_ref())];
             (
                 "typecheck".to_string(),
                 vec![file.to_string_lossy().to_string()],
                 inputs,
-                check,
+                checks,
             )
         }
         Command::Check(args) => {
             let (inputs, io_error) = build_inputs(std::slice::from_ref(&args.file));
-            let target = if let Some(assertion) = &args.assert {
-                Some(assertion.clone())
-            } else if args.all_assertions {
-                Some("all-assertions".to_string())
-            } else {
-                None
-            };
-            let check = if let Some(assertion) = &args.assert {
-                run_check_by_assertion(&args.file, io_error.as_ref(), assertion)
-            } else if args.all_assertions {
-                build_stub_check_result(
-                    "check",
-                    None,
-                    target.clone(),
+            let checks = if let Some(assertion) = &args.assert {
+                vec![run_check_by_assertion(
+                    &args.file,
                     io_error.as_ref(),
-                    "all-assertions not implemented yet",
-                )
+                    assertion,
+                )]
+            } else if args.all_assertions {
+                run_all_assertions(&args.file, io_error.as_ref())
             } else {
-                build_stub_check_result(
+                vec![build_stub_check_result(
                     "check",
                     None,
-                    target.clone(),
+                    None,
                     io_error.as_ref(),
                     "checker not implemented yet",
-                )
+                )]
             };
             (
                 "check".to_string(),
                 vec![args.file.to_string_lossy().to_string()],
                 inputs,
-                check,
+                checks,
             )
         }
         Command::Refine(args) => {
             let (inputs, io_error) = build_inputs(&[args.spec.clone(), args.impl_.clone()]);
-            let check = run_refine_check(args, io_error.as_ref());
+            let checks = vec![run_refine_check(args, io_error.as_ref())];
             (
                 "refine".to_string(),
                 vec![
@@ -236,20 +229,13 @@ fn execute(cli: &Cli) -> Result<(Status, i32, CheckResult, Vec<InputInfo>, Invoc
                     args.impl_.to_string_lossy().to_string(),
                 ],
                 inputs,
-                check,
+                checks,
             )
         }
     };
 
-    let status = check.status.clone();
-    let exit_code = match status {
-        Status::Pass => 0,
-        Status::Fail => 1,
-        Status::Error => 2,
-        Status::Unsupported => 3,
-        Status::Timeout => 4,
-        Status::OutOfMemory => 5,
-    };
+    let status = aggregate_status(&checks);
+    let exit_code = exit_code_for_status(&status);
 
     let invocation = Invocation {
         command,
@@ -263,7 +249,39 @@ fn execute(cli: &Cli) -> Result<(Status, i32, CheckResult, Vec<InputInfo>, Invoc
         seed: cli.seed,
     };
 
-    Ok((status, exit_code, check, inputs, invocation))
+    Ok((status, exit_code, checks, inputs, invocation))
+}
+
+fn aggregate_status(checks: &[CheckResult]) -> Status {
+    let mut worst = Status::Pass;
+    for check in checks {
+        if status_rank(&check.status) > status_rank(&worst) {
+            worst = check.status.clone();
+        }
+    }
+    worst
+}
+
+fn status_rank(status: &Status) -> u8 {
+    match status {
+        Status::Pass => 0,
+        Status::Unsupported => 1,
+        Status::Fail => 2,
+        Status::Timeout => 3,
+        Status::OutOfMemory => 4,
+        Status::Error => 5,
+    }
+}
+
+fn exit_code_for_status(status: &Status) -> i32 {
+    match status {
+        Status::Pass => 0,
+        Status::Fail => 1,
+        Status::Error => 2,
+        Status::Unsupported => 3,
+        Status::Timeout => 4,
+        Status::OutOfMemory => 5,
+    }
 }
 
 fn build_inputs(paths: &[PathBuf]) -> (Vec<InputInfo>, Option<String>) {
@@ -459,6 +477,120 @@ fn run_check_by_assertion(file: &Path, io_error: Option<&String>, assertion: &st
         None,
         "assertion not implemented yet",
     )
+}
+
+fn run_all_assertions(file: &Path, io_error: Option<&String>) -> Vec<CheckResult> {
+    let module = match parse_module_for_check(file, io_error, "all-assertions") {
+        Ok(module) => module,
+        Err(check) => return vec![*check],
+    };
+
+    if module.assertions.is_empty() {
+        return vec![error_check(
+            "check",
+            None,
+            Some("all-assertions".to_string()),
+            ReasonKind::InvalidInput,
+            "no assertions found".to_string(),
+        )];
+    }
+
+    let mut out = Vec::new();
+    for assertion in &module.assertions {
+        match assertion {
+            cspx_core::ir::AssertionDecl::Property {
+                target,
+                kind,
+                model,
+            } => {
+                let check_target = format!(
+                    "{} :[{} [{}]]",
+                    target.value,
+                    property_kind_str(*kind),
+                    property_model_str(*model)
+                );
+                match *kind {
+                    cspx_core::ir::PropertyKind::DeadlockFree => out.push(
+                        run_deadlock_property_assertion(&module, &target.value, check_target),
+                    ),
+                    _ => out.push(build_stub_check_result(
+                        "check",
+                        None,
+                        Some(check_target),
+                        None,
+                        "assertion not implemented yet",
+                    )),
+                }
+            }
+            cspx_core::ir::AssertionDecl::Refinement { spec, model, impl_ } => {
+                let model_str = refinement_op_str(*model).to_string();
+                let check_target = format!("{} [{}= {}", spec.value, model_str, impl_.value);
+                out.push(build_stub_check_result(
+                    "refine",
+                    Some(model_str),
+                    Some(check_target),
+                    None,
+                    "refinement assertion not implemented yet",
+                ));
+            }
+        }
+    }
+    out
+}
+
+fn run_deadlock_property_assertion(
+    module: &cspx_core::ir::Module,
+    target_proc: &str,
+    target_desc: String,
+) -> CheckResult {
+    let Some(expr) = module
+        .declarations
+        .iter()
+        .find(|decl| decl.name.value == target_proc)
+        .map(|decl| decl.expr.clone())
+    else {
+        return error_check(
+            "check",
+            None,
+            Some(target_desc),
+            ReasonKind::InvalidInput,
+            format!("undefined process: {target_proc}"),
+        );
+    };
+
+    let mut check_module = module.clone();
+    check_module.entry = Some(expr);
+
+    let checker = DeadlockChecker;
+    let request = CheckRequest {
+        command: cspx_core::check::CheckCommand::Check,
+        model: None,
+        target: Some(target_desc),
+    };
+    checker.check(&request, &check_module)
+}
+
+fn property_kind_str(kind: cspx_core::ir::PropertyKind) -> &'static str {
+    match kind {
+        cspx_core::ir::PropertyKind::DeadlockFree => "deadlock free",
+        cspx_core::ir::PropertyKind::DivergenceFree => "divergence free",
+        cspx_core::ir::PropertyKind::Deterministic => "deterministic",
+    }
+}
+
+fn property_model_str(model: cspx_core::ir::PropertyModel) -> &'static str {
+    match model {
+        cspx_core::ir::PropertyModel::F => "F",
+        cspx_core::ir::PropertyModel::FD => "FD",
+    }
+}
+
+fn refinement_op_str(model: cspx_core::ir::RefinementOp) -> &'static str {
+    match model {
+        cspx_core::ir::RefinementOp::T => "T",
+        cspx_core::ir::RefinementOp::F => "F",
+        cspx_core::ir::RefinementOp::FD => "FD",
+    }
 }
 
 fn parse_module_for_check(
