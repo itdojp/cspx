@@ -1,0 +1,5 @@
+-- all-assertions sample
+channel a
+P = a -> STOP
+assert P :[deadlock free [F]]
+assert P :[deterministic [FD]]

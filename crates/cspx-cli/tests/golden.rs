@@ -66,6 +66,22 @@ fn golden_check_assert() {
 }
 
 #[test]
+fn golden_check_all_assertions() {
+    let actual = run_json(&[
+        "check",
+        "--all-assertions",
+        "tests/cases/all_assertions.cspm",
+        "--format",
+        "json",
+    ]);
+    let expected = load_expected("expected_check_all_assertions.json");
+    assert_eq!(
+        strip_volatile_fields(actual),
+        strip_volatile_fields(expected)
+    );
+}
+
+#[test]
 fn golden_refine() {
     let actual = run_json(&[
         "refine",

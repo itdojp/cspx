@@ -1,10 +1,27 @@
+exit_code:
+  eq: 3
 status:
-  in: ["unsupported", "error"]
+  eq: "unsupported"
 checks:
   - name:
-      in: ["check", "refine"]
+      eq: "refine"
+    model:
+      eq: "T"
+    target:
+      eq: "SPEC [T= IMPL"
     status:
-      in: ["unsupported", "error"]
+      eq: "unsupported"
     reason:
       kind:
-        in: ["unsupported_syntax", "not_implemented", "invalid_input"]
+        eq: "not_implemented"
+  - name:
+      eq: "refine"
+    model:
+      eq: "F"
+    target:
+      eq: "SPEC [F= IMPL"
+    status:
+      eq: "unsupported"
+    reason:
+      kind:
+        eq: "not_implemented"

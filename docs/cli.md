@@ -21,6 +21,17 @@
 - `"divergence free"`
 - `"deterministic"`
 
+## `check --all-assertions`（v0.1）
+`cspx check --all-assertions <file>` は `<file>` 内の `assert` 宣言を **ファイル出現順** に列挙し、`checks` 配列に格納して出力する。
+
+- 未実装の assertion は `unsupported` + `reason.kind=not_implemented` とする。
+- `checks` は複数になり得る（最低 1 件）。
+
+## トップレベル status/exit_code の集約（v0.1）
+`checks` が複数ある場合、トップレベルの `status`/`exit_code` は以下の優先順位で集約する。
+
+`error` > `out_of_memory` > `timeout` > `fail` > `unsupported` > `pass`
+
 ## 共通オプション
 - `--format json|text`（default: `json`）
 - `--output <path>`（default: stdout）

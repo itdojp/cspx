@@ -1,0 +1,77 @@
+{
+  "schema_version": "0.1",
+  "tool": {
+    "name": "cspx",
+    "version": "0.1.0",
+    "git_sha": "UNKNOWN"
+  },
+  "invocation": {
+    "command": "check",
+    "args": [
+      "tests/cases/all_assertions.cspm"
+    ],
+    "format": "json",
+    "timeout_ms": null,
+    "memory_mb": null,
+    "seed": 0
+  },
+  "inputs": [
+    {
+      "path": "tests/cases/all_assertions.cspm",
+      "sha256": "3bf8ff56b5ffb8cc18408eb432ee0cd6dbe16b616f3b309a30b6c52d32e956b6"
+    }
+  ],
+  "status": "fail",
+  "exit_code": 1,
+  "started_at": "2026-02-06T02:59:43Z",
+  "finished_at": "2026-02-06T02:59:43Z",
+  "duration_ms": 0,
+  "checks": [
+    {
+      "name": "check",
+      "model": null,
+      "target": "P :[deadlock free [F]]",
+      "status": "fail",
+      "counterexample": {
+        "type": "trace",
+        "events": [
+          {
+            "label": "a"
+          }
+        ],
+        "is_minimized": false,
+        "tags": [
+          "deadlock"
+        ],
+        "source_spans": [
+          {
+            "path": "tests/cases/all_assertions.cspm",
+            "start_line": 3,
+            "start_col": 5,
+            "end_line": 3,
+            "end_col": 13
+          }
+        ]
+      },
+      "stats": {
+        "states": 2,
+        "transitions": 1
+      }
+    },
+    {
+      "name": "check",
+      "model": null,
+      "target": "P :[deterministic [FD]]",
+      "status": "unsupported",
+      "reason": {
+        "kind": "not_implemented",
+        "message": "assertion not implemented yet"
+      },
+      "counterexample": null,
+      "stats": {
+        "states": null,
+        "transitions": null
+      }
+    }
+  ]
+}

@@ -52,6 +52,20 @@ fn schema_check_assert() {
 }
 
 #[test]
+fn schema_check_all_assertions() {
+    let schema = load_schema();
+    let actual = run_json(&[
+        "check",
+        "--all-assertions",
+        "tests/cases/all_assertions.cspm",
+        "--format",
+        "json",
+    ]);
+    let result = schema.validate(&actual);
+    assert!(result.is_ok());
+}
+
+#[test]
 fn schema_refine() {
     let schema = load_schema();
     let actual = run_json(&[
