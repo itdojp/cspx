@@ -40,7 +40,9 @@ pub use lts_cspm::{CspmLtsError, CspmState, CspmStateCodec, CspmTransitionProvid
 pub use lts_simple::SimpleStateCodec;
 pub use lts_simple::{LtsError, SimpleState, SimpleTransitionProvider};
 pub use minimize::Minimizer;
-pub use minimize_simple::{IdentityMinimizer, TraceHeuristicMinimizer};
+#[allow(deprecated)]
+pub use minimize_simple::IdentityMinimizer;
+pub use minimize_simple::TraceHeuristicMinimizer;
 pub use queue::WorkQueue;
 pub use queue_inmemory::VecWorkQueue;
 pub use state_codec::StateCodec;

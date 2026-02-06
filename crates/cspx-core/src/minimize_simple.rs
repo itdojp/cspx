@@ -50,6 +50,10 @@ impl Minimizer for TraceHeuristicMinimizer {
     }
 }
 
+#[deprecated(
+    since = "0.1.0",
+    note = "IdentityMinimizer is no longer an identity/no-op minimizer. Use TraceHeuristicMinimizer directly instead."
+)]
 pub type IdentityMinimizer = TraceHeuristicMinimizer;
 
 #[cfg(test)]
@@ -113,5 +117,16 @@ mod tests {
 
         assert_eq!(labels(&output), vec!["a".to_string()]);
         assert!(!output.is_minimized);
+    }
+
+    #[test]
+    fn minimize_with_oracle_preserves_tau_when_required_for_failure() {
+        let minimizer = TraceHeuristicMinimizer;
+        let output = minimizer.minimize_with_oracle(trace(&["x", "tau", "y"]), |candidate| {
+            candidate.events.iter().any(|event| event.label == "tau")
+        });
+
+        assert_eq!(labels(&output), vec!["tau".to_string()]);
+        assert!(output.is_minimized);
     }
 }

@@ -5,7 +5,7 @@ use crate::ir::Module;
 use crate::lts::TransitionProvider;
 use crate::lts_cspm::{CspmStateCodec, CspmTransitionProvider};
 use crate::minimize::Minimizer;
-use crate::minimize_simple::IdentityMinimizer;
+use crate::minimize_simple::TraceHeuristicMinimizer;
 use crate::state_codec::StateCodec;
 use crate::types::{
     Counterexample, CounterexampleEvent, CounterexampleType, Reason, ReasonKind, SourceSpan, Stats,
@@ -116,7 +116,7 @@ impl Checker<RefinementInput> for RefinementChecker {
             tags,
             source_spans: collect_spans(&input.spec, &input.impl_),
         };
-        let minimizer = IdentityMinimizer::default();
+        let minimizer = TraceHeuristicMinimizer::default();
         let counterexample = minimizer.minimize_with_oracle(counterexample, |candidate| {
             counterexample_still_fails(
                 &model,
@@ -445,19 +445,9 @@ fn failures_includes(
                 continue;
             }
 
-            let mut witness = BTreeSet::<String>::new();
-            for spec_offer in &spec_stable_offers {
-                if let Some(label) = spec_offer.difference(&impl_offer).next() {
-                    witness.insert(label.clone());
-                }
-            }
-
-            let mut tags = vec!["refusal_mismatch".to_string()];
-            tags.extend(witness.into_iter().map(|label| format!("refuse:{label}")));
-
             return NodeAction::Fail(RefinementFailure {
                 trace: reconstruct_trace(pred, node_key),
-                tags,
+                tags: refusal_mismatch_tags(&spec_stable_offers, &impl_offer),
             });
         }
         NodeAction::Continue
@@ -495,19 +485,9 @@ fn failures_divergences_includes(
             if ok {
                 continue;
             }
-
-            let mut witness = BTreeSet::<String>::new();
-            for spec_offer in &spec_stable_offers {
-                if let Some(label) = spec_offer.difference(&impl_offer).next() {
-                    witness.insert(label.clone());
-                }
-            }
-
-            let mut tags = vec!["refusal_mismatch".to_string()];
-            tags.extend(witness.into_iter().map(|label| format!("refuse:{label}")));
             return NodeAction::Fail(RefinementFailure {
                 trace: reconstruct_trace(pred, node_key),
-                tags,
+                tags: refusal_mismatch_tags(&spec_stable_offers, &impl_offer),
             });
         }
 
@@ -536,12 +516,14 @@ fn replay_trace(
         if impl_next.states.is_empty() {
             return None;
         }
-        let spec_next = next_by_label(spec, &spec_closure.states, label);
-        if spec_next.states.is_empty() {
-            trace_mismatch = true;
+        if !trace_mismatch {
+            let spec_next = next_by_label(spec, &spec_closure.states, label);
+            if spec_next.states.is_empty() {
+                trace_mismatch = true;
+            }
+            spec_closure = spec_next;
         }
         impl_closure = impl_next;
-        spec_closure = spec_next;
     }
 
     Some(ReplayOutcome {
@@ -614,6 +596,20 @@ fn counterexample_still_fails(
             has_refusal_mismatch(spec, impl_, &replay)
         }
     }
+}
+
+fn refusal_mismatch_tags(
+    spec_stable_offers: &[BTreeSet<String>],
+    impl_offer: &BTreeSet<String>,
+) -> Vec<String> {
+    let mut tags = vec!["refusal_mismatch".to_string()];
+    for spec_offer in spec_stable_offers {
+        if let Some(label) = spec_offer.difference(impl_offer).next() {
+            tags.push(format!("refuse:{label}"));
+            break;
+        }
+    }
+    tags
 }
 
 fn collect_spans(spec: &Module, impl_: &Module) -> Vec<SourceSpan> {
