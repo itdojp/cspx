@@ -6,8 +6,18 @@ use cspx_core::{
 #[test]
 fn refinement_mismatch_fails() {
     let spec = cspx_core::ir::Module {
+        channels: Vec::new(),
         declarations: vec![cspx_core::ir::ProcessDecl {
-            name: "SPEC".to_string(),
+            name: cspx_core::ir::Spanned {
+                value: "SPEC".to_string(),
+                span: cspx_core::types::SourceSpan {
+                    path: "spec.cspm".to_string(),
+                    start_line: 1,
+                    start_col: 1,
+                    end_line: 1,
+                    end_col: 4,
+                },
+            },
             expr: cspx_core::ir::Spanned {
                 value: cspx_core::ir::ProcessExpr::Stop,
                 span: cspx_core::types::SourceSpan {
@@ -19,12 +29,23 @@ fn refinement_mismatch_fails() {
                 },
             },
         }],
+        assertions: Vec::new(),
         entry: None,
     };
     let impl_ = cspx_core::ir::Module {
+        channels: Vec::new(),
         declarations: vec![
             cspx_core::ir::ProcessDecl {
-                name: "IMPL".to_string(),
+                name: cspx_core::ir::Spanned {
+                    value: "IMPL".to_string(),
+                    span: cspx_core::types::SourceSpan {
+                        path: "impl.cspm".to_string(),
+                        start_line: 1,
+                        start_col: 1,
+                        end_line: 1,
+                        end_col: 4,
+                    },
+                },
                 expr: cspx_core::ir::Spanned {
                     value: cspx_core::ir::ProcessExpr::Stop,
                     span: cspx_core::types::SourceSpan {
@@ -37,7 +58,16 @@ fn refinement_mismatch_fails() {
                 },
             },
             cspx_core::ir::ProcessDecl {
-                name: "IMPL2".to_string(),
+                name: cspx_core::ir::Spanned {
+                    value: "IMPL2".to_string(),
+                    span: cspx_core::types::SourceSpan {
+                        path: "impl.cspm".to_string(),
+                        start_line: 2,
+                        start_col: 1,
+                        end_line: 2,
+                        end_col: 5,
+                    },
+                },
                 expr: cspx_core::ir::Spanned {
                     value: cspx_core::ir::ProcessExpr::Stop,
                     span: cspx_core::types::SourceSpan {
@@ -50,6 +80,7 @@ fn refinement_mismatch_fails() {
                 },
             },
         ],
+        assertions: Vec::new(),
         entry: None,
     };
 

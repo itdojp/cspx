@@ -58,12 +58,12 @@ impl SimpleTransitionProvider {
     pub fn from_module(module: &Module) -> Result<Self, LtsError> {
         if let Some(entry) = &module.entry {
             return Ok(Self {
-                initial: state_from_expr(entry),
+                initial: state_from_expr(entry)?,
             });
         }
         if module.declarations.len() == 1 {
             return Ok(Self {
-                initial: state_from_expr(&module.declarations[0].expr),
+                initial: state_from_expr(&module.declarations[0].expr)?,
             });
         }
         Err(LtsError {
@@ -86,8 +86,13 @@ impl TransitionProvider for SimpleTransitionProvider {
     }
 }
 
-fn state_from_expr(expr: &Spanned<ProcessExpr>) -> SimpleState {
-    match expr.value {
-        ProcessExpr::Stop => SimpleState::Stop,
+fn state_from_expr(expr: &Spanned<ProcessExpr>) -> Result<SimpleState, LtsError> {
+    match &expr.value {
+        ProcessExpr::Stop => Ok(SimpleState::Stop),
+        _ => Err(LtsError {
+            message: "process expression is not supported by SimpleTransitionProvider yet"
+                .to_string(),
+            span: Some(expr.span.clone()),
+        }),
     }
 }
