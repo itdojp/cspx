@@ -48,6 +48,10 @@
 }
 ```
 
+### `counterexample.is_minimized` の意味（v0.1）
+- `true`: minimizer が oracle で fail 維持を検証し、局所最小（1イベント削除で fail を維持できない）を確認済み。
+- `false`: 最小化未実施、または fail 維持を検証できず最小性を主張できない状態。
+
 ## 例（トップレベル）
 ```json
 {
