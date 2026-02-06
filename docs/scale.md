@@ -33,8 +33,29 @@
 - `StateCodec` は **決定的（deterministic）** であること（同一状態 → 同一バイト列）。
 - 仕様上、同一バイト列は同一状態とみなすため、`StateCodec` は **衝突しない完全シリアライズ**を提供することを前提とする。
 
-### v0.2+ 要件（外部インデックス化・排他・復旧）
-現行実装の制約（全スキャン、ロックなし、破損耐性なし）を踏まえ、次の要件を追加する。
+### 方式（v0.2 / 現行実装）
+`feat/phase5-disk-store-81` 以降の実装は、`path` を log パスとして次の 3 ファイルを使用する。
+
+- `path`（例: `states.log`）: append-only の状態ログ。
+- `path.with_extension("idx")`（例: `states.idx`）: 外部インデックス。
+- `path.with_extension("lock")`（例: `states.lock`）: 排他用ロックファイル。
+
+#### index フォーマット（v0.2 現行）
+- 1行目: `cspx-disk-index-v1 log_len=<n>`
+- 2行目以降: `StateCodec::encode(state)` を hex 化した 1 行 1 record。
+- `open` 時は `log_len` と実 log サイズを照合し、一致しない場合は idx を破棄して log から再構築する。
+
+#### 復旧（v0.2 現行）
+- `idx` が欠損/破損/不整合のとき、`state.log` を正として idx を再生成する。
+- `state.log` の末尾に改行なしの不完全 record がある場合は無視し、次回以降の破損伝播を防ぐため log を末尾改行境界まで truncate する。
+- 末尾以外の完全行に不正 record がある場合は `InvalidData` として `open` を失敗させる。
+
+#### 排他（v0.2 現行）
+- `open` で `state.lock` を `create_new` し、取得できない場合は `WouldBlock` で失敗させる。
+- プロセス正常終了時は lock を削除する（異常終了で lock が残る場合は手動削除が必要）。
+
+### v0.3+ 要件（高度化）
+現行 v0.2 実装（lock file 排他、hex index）を踏まえ、将来の高度化要件を以下に示す。
 
 #### ファイルレイアウト
 - `state.log`: append-only の record ログ。
@@ -82,14 +103,14 @@ deterministic mode は「スケジュールに依存しない探索順」を仕�
 
 #### 前提条件（MUST）
 - ワーカー数が固定であること（同一 `workers`）。
-- `StateCodec::encode` が決定的であること（同一 state → 同一 bytes）。
-- v0.1 で既に満たしているように、`TransitionProvider::transitions` が決定的順序であることを維持する（例: `label` 昇順、次状態を `StateCodec` bytes 昇順）。
+- 状態順序キーが決定的であること（現行実装では `State: Ord` による全順序）。
+- v0.1 で既に満たしているように、`TransitionProvider::transitions` が決定的順序であることを維持する（例: `label` 昇順、次状態も決定的順序）。
 
 #### 探索順の規約（SHOULD）
-- 各探索レベルごとに、まず現在の frontier を `StateCodec` bytes の昇順に正規化（ソート）する。
+- 各探索レベルごとに、まず現在の frontier を決定的な状態順序（現行実装では `Ord`）で正規化（ソート）する。
 - 正規化済み frontier を、その順序を保持したまま **固定順**でワーカーに割当（例: 連続チャンク分割）する。
 - 各ワーカーは割り当てられた部分 frontier を処理し、生成した候補状態列を **その入力順を維持した列**として返す。
-- すべてのワーカー結果を、割り当てチャンクの元の並び順（昇順に正規化された frontier の順序）どおりに連結して候補集合を構成し、次 frontier は「候補集合を `StateCodec` bytes 昇順にソート → 重複除外 → frontier 化」する。
+- すべてのワーカー結果を、割り当てチャンクの元の並び順（昇順に正規化された frontier の順序）どおりに連結して候補集合を構成し、次 frontier は「候補集合を決定的順序でソート → 重複除外 → frontier 化」する。
 
 #### 出力の決定性（MUST）
 - 同一入力/同一 `seed`/同一 `workers` で、少なくとも以下が一致する:
@@ -99,4 +120,4 @@ deterministic mode は「スケジュールに依存しない探索順」を仕�
 ### CLI への反映（v0.2+）
 - `--parallel <n>`: 並列探索を有効化（`n>=1`）。
 - `--deterministic`: deterministic mode を有効化。
-- `--seed <n>`: deterministic mode で必須（探索順の将来拡張に備え、結果 JSON に記録する）。
+- `--seed <n>`: deterministic mode で必須（現行は将来拡張向け予約値として結果 JSON に記録する）。

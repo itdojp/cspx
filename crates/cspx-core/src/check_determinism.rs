@@ -2,12 +2,14 @@ use crate::assertion_select::{
     list_property_assertion_candidates, module_for_property_check, property_kind_str,
 };
 use crate::check::{CheckRequest, CheckResult, Checker};
+use crate::counterexample_span::module_counterexample_spans;
+use crate::explain::Explainer;
+use crate::explain_simple::BasicExplainer;
 use crate::ir::{Module, PropertyKind};
 use crate::lts::TransitionProvider;
 use crate::lts_cspm::CspmTransitionProvider;
 use crate::types::{
-    Counterexample, CounterexampleEvent, CounterexampleType, Reason, ReasonKind, SourceSpan, Stats,
-    Status,
+    Counterexample, CounterexampleEvent, CounterexampleType, Reason, ReasonKind, Stats, Status,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
@@ -146,8 +148,10 @@ fn determinism_check(
                 events,
                 is_minimized: false,
                 tags: vec!["nondeterminism".to_string(), format!("label:{label}")],
-                source_spans: module_spans(module),
+                source_spans: module_counterexample_spans(module),
             };
+            let explainer = BasicExplainer;
+            let counterexample = explainer.explain(counterexample);
 
             return CheckResult {
                 name: "check".to_string(),
@@ -212,14 +216,4 @@ fn trace_visible_events(
         .filter(|label| label != "tau")
         .map(|label| CounterexampleEvent { label })
         .collect()
-}
-
-fn module_spans(module: &Module) -> Vec<SourceSpan> {
-    if let Some(entry) = &module.entry {
-        return vec![entry.span.clone()];
-    }
-    if let Some(decl) = module.declarations.first() {
-        return vec![decl.expr.span.clone()];
-    }
-    Vec::new()
 }

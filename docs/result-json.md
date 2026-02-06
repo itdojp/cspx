@@ -7,7 +7,7 @@
 |---|---|---|---|
 | `schema_version` | string | yes | 固定値 `"0.1"` |
 | `tool` | object | yes | ツール情報（`name`, `version`, `git_sha`） |
-| `invocation` | object | yes | 実行情報（`command`, `args`, `format`, `timeout_ms`, `memory_mb`, `seed`） |
+| `invocation` | object | yes | 実行情報（`command`, `args`, `format`, `timeout_ms`, `memory_mb`, `parallel`, `deterministic`, `seed`） |
 | `inputs` | array | yes | 入力一覧（`path`, `sha256`） |
 | `status` | enum | yes | `pass | fail | unsupported | timeout | out_of_memory | error` |
 | `exit_code` | integer | yes | CLI の exit code と一致 |
@@ -48,6 +48,14 @@
 }
 ```
 
+### `counterexample.is_minimized` の意味（v0.1）
+- `true`: minimizer が oracle で fail 維持を検証し、局所最小（1イベント削除で fail を維持できない）を確認済み。
+- `false`: 最小化未実施、または fail 維持を検証できず最小性を主張できない状態。
+
+### `counterexample.tags` の意味（v0.1）
+- 主要カテゴリ（`deadlock` / `divergence` / `nondeterminism` / `refinement`）を基本とする。
+- `kind:<カテゴリ>` と `explained` は Explainer が付与する説明タグ。
+
 ## 例（トップレベル）
 ```json
 {
@@ -59,6 +67,8 @@
     "format": "json",
     "timeout_ms": null,
     "memory_mb": null,
+    "parallel": 1,
+    "deterministic": false,
     "seed": 0
   },
   "inputs": [

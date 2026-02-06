@@ -7,6 +7,8 @@
     "format": "json",
     "timeout_ms": null,
     "memory_mb": null,
+    "parallel": 1,
+    "deterministic": false,
     "seed": 0
   },
   "inputs": [
@@ -27,7 +29,7 @@
         "type": "trace",
         "events": [],
         "is_minimized": false,
-        "tags": ["deadlock"],
+        "tags": ["deadlock", "kind:deadlock", "explained"],
         "source_spans": [
           { "path": "tests/cases/ok.cspm", "start_line": 1, "start_col": 1, "end_line": 1, "end_col": 4 }
         ]

@@ -2,10 +2,10 @@ use anyhow::{anyhow, Context, Result};
 use chrono::{SecondsFormat, Utc};
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use cspx_core::{
-    explore, CheckRequest, CheckResult, Checker, DeadlockChecker, DeterminismChecker,
-    DivergenceChecker, Frontend, FrontendErrorKind, InMemoryStateStore, Reason, ReasonKind,
-    RefinementChecker, RefinementInput, SimpleFrontend, SimpleTransitionProvider, Stats, Status,
-    VecWorkQueue,
+    explore, explore_parallel, explore_parallel_with_options, CheckRequest, CheckResult, Checker,
+    DeadlockChecker, DeterminismChecker, DivergenceChecker, Frontend, FrontendErrorKind,
+    InMemoryStateStore, ParallelExploreOptions, Reason, ReasonKind, RefinementChecker,
+    RefinementInput, SimpleFrontend, SimpleTransitionProvider, Stats, Status, VecWorkQueue,
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -33,8 +33,19 @@ struct Cli {
     #[arg(long, global = true)]
     memory_mb: Option<u64>,
 
-    #[arg(long, default_value_t = 0, global = true)]
-    seed: u64,
+    #[arg(
+        long,
+        default_value_t = 1,
+        value_parser = clap::value_parser!(usize),
+        global = true
+    )]
+    parallel: usize,
+
+    #[arg(long, global = true)]
+    deterministic: bool,
+
+    #[arg(long, global = true)]
+    seed: Option<u64>,
 }
 
 #[derive(Subcommand)]
@@ -125,6 +136,8 @@ struct Invocation {
     format: String,
     timeout_ms: Option<u64>,
     memory_mb: Option<u64>,
+    parallel: usize,
+    deterministic: bool,
     seed: u64,
 }
 
@@ -183,10 +196,24 @@ fn run(cli: Cli) -> Result<i32> {
 }
 
 fn execute(cli: &Cli) -> Result<ExecuteOutput> {
+    if cli.parallel == 0 {
+        return Err(anyhow!("--parallel must be >= 1"));
+    }
+    if cli.deterministic && cli.seed.is_none() {
+        return Err(anyhow!("--deterministic requires --seed <n>"));
+    }
+    let seed = cli.seed.unwrap_or(0);
+
     let (command, args, inputs, checks) = match &cli.command {
         Command::Typecheck { file } => {
             let (inputs, io_error) = build_inputs(std::slice::from_ref(file));
-            let checks = vec![run_typecheck(file, io_error.as_ref())];
+            let checks = vec![run_typecheck(
+                file,
+                io_error.as_ref(),
+                cli.parallel,
+                cli.deterministic,
+                seed,
+            )];
             (
                 "typecheck".to_string(),
                 vec![file.to_string_lossy().to_string()],
@@ -247,7 +274,9 @@ fn execute(cli: &Cli) -> Result<ExecuteOutput> {
         },
         timeout_ms: cli.timeout_ms,
         memory_mb: cli.memory_mb,
-        seed: cli.seed,
+        parallel: cli.parallel,
+        deterministic: cli.deterministic,
+        seed,
     };
 
     Ok((status, exit_code, checks, inputs, invocation))
@@ -321,7 +350,13 @@ fn compute_sha256(path: &Path) -> Result<String, String> {
     Ok(hex::encode(hasher.finalize()))
 }
 
-fn run_typecheck(file: &Path, io_error: Option<&String>) -> CheckResult {
+fn run_typecheck(
+    file: &Path,
+    io_error: Option<&String>,
+    parallel: usize,
+    deterministic: bool,
+    seed: u64,
+) -> CheckResult {
     if let Some(message) = io_error {
         return error_check(
             "typecheck",
@@ -348,7 +383,7 @@ fn run_typecheck(file: &Path, io_error: Option<&String>) -> CheckResult {
     let frontend = SimpleFrontend;
     match frontend.parse_and_typecheck(&source, &file.to_string_lossy()) {
         Ok(output) => {
-            let stats = build_stats(&output.ir);
+            let stats = build_stats(&output.ir, parallel, deterministic, seed);
             CheckResult {
                 name: "typecheck".to_string(),
                 model: None,
@@ -385,7 +420,12 @@ fn run_typecheck(file: &Path, io_error: Option<&String>) -> CheckResult {
     }
 }
 
-fn build_stats(module: &cspx_core::ir::Module) -> Stats {
+fn build_stats(
+    module: &cspx_core::ir::Module,
+    parallel: usize,
+    deterministic: bool,
+    seed: u64,
+) -> Stats {
     let provider = match SimpleTransitionProvider::from_module(module) {
         Ok(provider) => provider,
         Err(_) => {
@@ -397,8 +437,24 @@ fn build_stats(module: &cspx_core::ir::Module) -> Stats {
     };
 
     let mut store = InMemoryStateStore::new();
-    let mut queue = VecWorkQueue::new();
-    match explore(&provider, &mut store, &mut queue) {
+    let result = if deterministic {
+        explore_parallel_with_options(
+            &provider,
+            &mut store,
+            ParallelExploreOptions {
+                workers: parallel,
+                deterministic: true,
+                seed,
+            },
+        )
+    } else if parallel > 1 {
+        explore_parallel(&provider, &mut store, parallel)
+    } else {
+        let mut queue = VecWorkQueue::new();
+        explore(&provider, &mut store, &mut queue)
+    };
+
+    match result {
         Ok(stats) => stats,
         Err(_) => Stats {
             states: None,

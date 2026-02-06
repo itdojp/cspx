@@ -51,6 +51,14 @@
 - spec が divergence 可能な trace 以降は chaos とみなし、後続の trace/refusal の検査を打ち切る（v0.1）。
 - divergence mismatch の反例は trace の末尾に `tau` を 1 つ付与し、`tags` に `divergence_mismatch` を付与する。
 
+## Counterexample tags taxonomy（v0.1）
+反例の `tags` は次の分類を基本とする。
+
+- 主要カテゴリ: `deadlock` / `divergence` / `nondeterminism` / `refinement`
+- モデル識別: `model:T` / `model:F` / `model:FD`
+- 詳細原因: `label:<event>` / `trace_mismatch` / `refusal_mismatch` / `refuse:<event>` / `divergence_mismatch`
+- Explainer 付与: `kind:<主要カテゴリ>` / `explained`
+
 ## トップレベル status/exit_code の集約（v0.1）
 `checks` が複数ある場合、トップレベルの `status`/`exit_code` は以下の優先順位で集約する。
 
@@ -61,7 +69,9 @@
 - `--output <path>`（default: stdout）
 - `--timeout-ms <n>`（任意）
 - `--memory-mb <n>`（任意）
-- `--seed <n>`（default: `0`）
+- `--parallel <n>`（default: `1`、`n>=1`）
+- `--deterministic`（決定性モード）
+- `--seed <n>`（default: `0`、ただし `--deterministic` 指定時は必須）
 - `--version`
 
 ## Exit code 規約
@@ -76,11 +86,13 @@
 - `unsupported` は「機能/構文が未実装または未対応」であることを示す。
 - `error` は「実行時例外・I/O 失敗・不正入力などのツールエラー」を示す。
 - `--timeout-ms` / `--memory-mb` が指定されない場合、Result JSON では `null` を出力する。
-- `--seed` は探索順の再現性のために使用する（v0.1 では記録のみの stub でも良い）。
+- `--parallel` / `--deterministic` / `--seed` は invocation に記録される。
+- 現行の CLI 実装では `typecheck` の状態空間統計計算で並列探索設定が有効になる。
 
 ## 使用例
 ```sh
 cspx typecheck spec.cspm --format json
+cspx typecheck spec.cspm --parallel 4 --deterministic --seed 42 --format json
 cspx check --assert "deadlock free" spec.cspm --format json
 cspx refine --model FD spec.cspm impl.cspm --format json
 ```

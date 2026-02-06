@@ -280,6 +280,7 @@ fn traces_refinement_fails_on_extra_visible_event() {
     let counterexample = result.counterexample.expect("counterexample");
     assert_eq!(counterexample.events.len(), 1);
     assert_eq!(counterexample.events[0].label, "b");
+    assert!(counterexample.is_minimized);
 }
 
 #[test]
@@ -323,6 +324,7 @@ fn traces_refinement_handles_tau_closure() {
     let counterexample = result.counterexample.expect("counterexample");
     assert_eq!(counterexample.events.len(), 1);
     assert_eq!(counterexample.events[0].label, "b");
+    assert!(counterexample.is_minimized);
 }
 
 #[test]
@@ -407,6 +409,7 @@ fn failures_refinement_fails_on_refusal_mismatch() {
     assert_eq!(result.status, cspx_core::types::Status::Fail);
     let counterexample = result.counterexample.expect("counterexample");
     assert_eq!(counterexample.events.len(), 0);
+    assert!(counterexample.is_minimized);
     assert!(counterexample.tags.iter().any(|t| t == "refusal_mismatch"));
     assert!(counterexample.tags.iter().any(|t| t == "refuse:b"));
 }
@@ -477,6 +480,7 @@ fn failures_divergences_refinement_fails_on_impl_divergence() {
     assert_eq!(result.status, cspx_core::types::Status::Fail);
     let counterexample = result.counterexample.expect("counterexample");
     assert!(counterexample.events.iter().any(|e| e.label == "tau"));
+    assert!(counterexample.is_minimized);
     assert!(counterexample
         .tags
         .iter()

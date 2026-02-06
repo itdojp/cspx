@@ -4,6 +4,7 @@ pub mod check_deadlock;
 pub mod check_determinism;
 pub mod check_divergence;
 pub mod check_refine;
+pub mod counterexample_span;
 pub mod disk_store;
 pub mod explain;
 pub mod explain_simple;
@@ -31,7 +32,9 @@ pub use check_refine::{RefinementChecker, RefinementInput};
 pub use disk_store::DiskStateStore;
 pub use explain::Explainer;
 pub use explain_simple::BasicExplainer;
-pub use explore::{explore, explore_parallel};
+pub use explore::{
+    explore, explore_parallel, explore_parallel_with_options, ParallelExploreOptions,
+};
 pub use frontend::{Frontend, FrontendOutput};
 pub use frontend_simple::{FrontendError, FrontendErrorKind, SimpleFrontend};
 pub use ir::CoreIr;
@@ -40,7 +43,9 @@ pub use lts_cspm::{CspmLtsError, CspmState, CspmStateCodec, CspmTransitionProvid
 pub use lts_simple::SimpleStateCodec;
 pub use lts_simple::{LtsError, SimpleState, SimpleTransitionProvider};
 pub use minimize::Minimizer;
+#[allow(deprecated)]
 pub use minimize_simple::IdentityMinimizer;
+pub use minimize_simple::TraceHeuristicMinimizer;
 pub use queue::WorkQueue;
 pub use queue_inmemory::VecWorkQueue;
 pub use state_codec::StateCodec;
