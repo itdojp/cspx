@@ -175,3 +175,80 @@ P = a -> STOP ||| b -> STOP
     assert_eq!(keyed[0].0, "a");
     assert_eq!(keyed[1].0, "b");
 }
+
+#[test]
+fn explore_hiding_turns_visible_event_into_tau_loop() {
+    let input = r#"channel a
+P = (a -> P) \\ {|a|}
+"#;
+    let frontend = SimpleFrontend;
+    let module = frontend
+        .parse_and_typecheck(input, "model.cspm")
+        .expect("parse_and_typecheck")
+        .ir;
+
+    let provider = CspmTransitionProvider::from_module(&module).expect("provider");
+    let mut store = InMemoryStateStore::new();
+    let mut queue = VecWorkQueue::new();
+    let stats = explore(&provider, &mut store, &mut queue).expect("explore");
+
+    assert_eq!(stats.states, Some(1));
+    assert_eq!(stats.transitions, Some(1));
+
+    let keyed = transitions_keyed(&provider);
+    assert_eq!(keyed.len(), 1);
+    assert_eq!(keyed[0].0, "tau");
+}
+
+#[test]
+fn explore_hiding_only_affects_matching_channels() {
+    let input = r#"channel a
+channel b
+P = (a -> STOP [] b -> STOP) \\ {|a|}
+"#;
+    let frontend = SimpleFrontend;
+    let module = frontend
+        .parse_and_typecheck(input, "model.cspm")
+        .expect("parse_and_typecheck")
+        .ir;
+
+    let provider = CspmTransitionProvider::from_module(&module).expect("provider");
+    let mut store = InMemoryStateStore::new();
+    let mut queue = VecWorkQueue::new();
+    let stats = explore(&provider, &mut store, &mut queue).expect("explore");
+
+    assert_eq!(stats.states, Some(2));
+    assert_eq!(stats.transitions, Some(2));
+
+    let keyed = transitions_keyed(&provider);
+    assert_eq!(keyed.len(), 2);
+    assert_eq!(keyed[0].0, "b");
+    assert_eq!(keyed[1].0, "tau");
+}
+
+#[test]
+fn explore_hiding_maps_parallel_sync_event_to_tau() {
+    let input = r#"channel ch : {0..1}
+Sender = ch!1 -> Sender
+Receiver = ch?x -> Receiver
+System = (Sender [|{|ch|}|] Receiver) \\ {|ch|}
+System
+"#;
+    let frontend = SimpleFrontend;
+    let module = frontend
+        .parse_and_typecheck(input, "model.cspm")
+        .expect("parse_and_typecheck")
+        .ir;
+
+    let provider = CspmTransitionProvider::from_module(&module).expect("provider");
+    let mut store = InMemoryStateStore::new();
+    let mut queue = VecWorkQueue::new();
+    let stats = explore(&provider, &mut store, &mut queue).expect("explore");
+
+    assert_eq!(stats.states, Some(1));
+    assert_eq!(stats.transitions, Some(1));
+
+    let keyed = transitions_keyed(&provider);
+    assert_eq!(keyed.len(), 1);
+    assert_eq!(keyed[0].0, "tau");
+}

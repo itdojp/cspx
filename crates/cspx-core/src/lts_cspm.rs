@@ -48,6 +48,10 @@ enum ExprNode {
         right: ExprId,
         sync: BTreeSet<String>,
     },
+    Hide {
+        inner: ExprId,
+        hide: BTreeSet<String>,
+    },
 }
 
 #[derive(Debug)]
@@ -67,6 +71,10 @@ pub enum CspmState {
         sync: BTreeSet<String>,
         left: Box<CspmState>,
         right: Box<CspmState>,
+    },
+    Hide {
+        hide: BTreeSet<String>,
+        inner: Box<CspmState>,
     },
 }
 
@@ -96,6 +104,15 @@ impl StateCodec<CspmState> for CspmStateCodec {
                 }
                 out.extend_from_slice(&self.encode(left));
                 out.extend_from_slice(&self.encode(right));
+            }
+            CspmState::Hide { hide, inner } => {
+                out.push(3);
+                out.extend_from_slice(&(hide.len() as u32).to_be_bytes());
+                for channel in hide {
+                    out.extend_from_slice(&(channel.len() as u32).to_be_bytes());
+                    out.extend_from_slice(channel.as_bytes());
+                }
+                out.extend_from_slice(&self.encode(inner));
             }
         }
         out
@@ -163,6 +180,18 @@ impl StateCodec<CspmState> for CspmStateCodec {
                         sync,
                         left: Box::new(left),
                         right: Box::new(right),
+                    })
+                }
+                3 => {
+                    let count = take_u32(bytes, "invalid hide count bytes")? as usize;
+                    let mut hide = BTreeSet::new();
+                    for _ in 0..count {
+                        hide.insert(take_string(bytes)?);
+                    }
+                    let inner = decode_state(bytes)?;
+                    Ok(CspmState::Hide {
+                        hide,
+                        inner: Box::new(inner),
                     })
                 }
                 _ => Err(StateCodecError::new("unknown CspmState tag")),
@@ -253,6 +282,9 @@ impl CspmTransitionProvider {
             CspmState::Parallel { sync, left, right } => {
                 self.transitions_for_parallel_unordered(sync, left, right, out)
             }
+            CspmState::Hide { hide, inner } => {
+                self.transitions_for_hide_unordered(hide, inner, out)
+            }
         }
     }
 
@@ -298,6 +330,13 @@ impl CspmTransitionProvider {
                     sync: sync.clone(),
                     left: Box::new(state_from_expr(&self.program, *left, env.clone())),
                     right: Box::new(state_from_expr(&self.program, *right, env.clone())),
+                };
+                self.transitions_for_state_unordered(&state, out);
+            }
+            ExprNode::Hide { inner, hide } => {
+                let state = CspmState::Hide {
+                    hide: hide.clone(),
+                    inner: Box::new(state_from_expr(&self.program, *inner, env.clone())),
                 };
                 self.transitions_for_state_unordered(&state, out);
             }
@@ -382,6 +421,32 @@ impl CspmTransitionProvider {
         }
     }
 
+    fn transitions_for_hide_unordered(
+        &self,
+        hide: &BTreeSet<String>,
+        inner: &CspmState,
+        out: &mut Vec<(Transition, CspmState)>,
+    ) {
+        fn label_channel(label: &str) -> &str {
+            label.split_once('.').map(|(ch, _)| ch).unwrap_or(label)
+        }
+
+        let mut inner_next = Vec::new();
+        self.transitions_for_state_unordered(inner, &mut inner_next);
+        for (transition, next_inner) in inner_next {
+            let label =
+                if transition.label != "tau" && hide.contains(label_channel(&transition.label)) {
+                    "tau".to_string()
+                } else {
+                    transition.label
+                };
+            out.push((
+                Transition { label },
+                make_hide_state(hide.clone(), next_inner),
+            ));
+        }
+    }
+
     fn eval_event(
         &self,
         event: &EventPat,
@@ -442,7 +507,33 @@ fn state_from_expr(program: &Program, expr: ExprId, env: BTreeMap<String, u64>) 
             left: Box::new(state_from_expr(program, *left, env.clone())),
             right: Box::new(state_from_expr(program, *right, env.clone())),
         },
+        ExprNode::Hide { inner, hide } => {
+            make_hide_state(hide.clone(), state_from_expr(program, *inner, env))
+        }
         _ => CspmState::Expr { expr, env },
+    }
+}
+
+fn make_hide_state(hide: BTreeSet<String>, inner: CspmState) -> CspmState {
+    if hide.is_empty() {
+        return inner;
+    }
+    match inner {
+        CspmState::Hide {
+            hide: inner_hide,
+            inner,
+        } => {
+            let mut merged = hide;
+            merged.extend(inner_hide);
+            CspmState::Hide {
+                hide: merged,
+                inner,
+            }
+        }
+        other => CspmState::Hide {
+            hide,
+            inner: Box::new(other),
+        },
     }
 }
 
@@ -628,10 +719,20 @@ impl<'a> ProgramBuilder<'a> {
                     Some(expr.span.clone()),
                 ))
             }
-            ProcessExpr::Hide { .. } => Err(CspmLtsError {
-                message: "hiding is not supported yet".to_string(),
-                span: Some(expr.span.clone()),
-            }),
+            ProcessExpr::Hide { inner, hide } => {
+                let inner = self.compile_expr(inner)?;
+                let mut hide_channels = BTreeSet::new();
+                for channel in &hide.channels {
+                    hide_channels.insert(channel.value.clone());
+                }
+                Ok(self.intern(
+                    ExprNode::Hide {
+                        inner,
+                        hide: hide_channels,
+                    },
+                    Some(expr.span.clone()),
+                ))
+            }
         }
     }
 }
