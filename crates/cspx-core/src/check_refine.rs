@@ -51,6 +51,12 @@ struct Closure {
     sig: Vec<Vec<u8>>,
 }
 
+enum NodeAction {
+    Continue,
+    Prune,
+    Fail(RefinementFailure),
+}
+
 impl Checker<RefinementInput> for RefinementChecker {
     fn check(&self, request: &CheckRequest, input: &RefinementInput) -> CheckResult {
         let model = request.model.clone().unwrap_or(RefinementModel::T);
@@ -71,7 +77,7 @@ impl Checker<RefinementInput> for RefinementChecker {
         let outcome = match model {
             RefinementModel::T => trace_includes(&spec_provider, &impl_provider),
             RefinementModel::F => failures_includes(&spec_provider, &impl_provider),
-            RefinementModel::FD => return not_implemented_result(request, model),
+            RefinementModel::FD => failures_divergences_includes(&spec_provider, &impl_provider),
         };
 
         if outcome.refines {
@@ -139,27 +145,6 @@ fn invalid_input_result(request: &CheckRequest, message: String) -> CheckResult 
         reason: Some(Reason {
             kind: ReasonKind::InvalidInput,
             message: Some(message),
-        }),
-        counterexample: None,
-        stats: Some(Stats {
-            states: None,
-            transitions: None,
-        }),
-    }
-}
-
-fn not_implemented_result(request: &CheckRequest, model: RefinementModel) -> CheckResult {
-    CheckResult {
-        name: "refine".to_string(),
-        model: Some(model.as_str().to_string()),
-        target: request.target.clone(),
-        status: Status::Unsupported,
-        reason: Some(Reason {
-            kind: ReasonKind::NotImplemented,
-            message: Some(format!(
-                "refinement model {} is not implemented yet",
-                model.as_str()
-            )),
         }),
         counterexample: None,
         stats: Some(Stats {
@@ -280,18 +265,64 @@ fn stable_offer_sets(
     out
 }
 
+fn closure_has_tau_cycle(provider: &CspmTransitionProvider, closure_states: &[State]) -> bool {
+    if closure_states.is_empty() {
+        return false;
+    }
+
+    let mut index_of = HashMap::<State, usize>::new();
+    for (idx, state) in closure_states.iter().cloned().enumerate() {
+        index_of.insert(state, idx);
+    }
+
+    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); closure_states.len()];
+    for (idx, state) in closure_states.iter().enumerate() {
+        for (transition, next_state) in provider.transitions(state) {
+            if transition.label != TAU {
+                continue;
+            }
+            let Some(next_idx) = index_of.get(&next_state).copied() else {
+                continue;
+            };
+            adj[idx].push(next_idx);
+        }
+    }
+
+    let mut indegree = vec![0usize; adj.len()];
+    for edges in &adj {
+        for &to in edges {
+            indegree[to] += 1;
+        }
+    }
+
+    let mut queue = VecDeque::<usize>::new();
+    for (idx, &deg) in indegree.iter().enumerate() {
+        if deg == 0 {
+            queue.push_back(idx);
+        }
+    }
+
+    let mut visited = 0usize;
+    while let Some(v) = queue.pop_front() {
+        visited += 1;
+        for &to in &adj[v] {
+            indegree[to] = indegree[to].saturating_sub(1);
+            if indegree[to] == 0 {
+                queue.push_back(to);
+            }
+        }
+    }
+
+    visited != adj.len()
+}
+
 fn bfs_refinement<F>(
     spec: &CspmTransitionProvider,
     impl_: &CspmTransitionProvider,
     mut node_check: F,
 ) -> RefinementOutcome
 where
-    F: FnMut(
-        &NodeKey,
-        &[State],
-        &[State],
-        &HashMap<NodeKey, (NodeKey, String)>,
-    ) -> Option<RefinementFailure>,
+    F: FnMut(&NodeKey, &[State], &[State], &HashMap<NodeKey, (NodeKey, String)>) -> NodeAction,
 {
     let impl0 = tau_closure(impl_, vec![impl_.initial_state()]);
     let spec0 = tau_closure(spec, vec![spec.initial_state()]);
@@ -311,20 +342,24 @@ where
     let mut transitions_count: u64 = 0;
 
     while let Some((node_key, impl_closure, spec_closure)) = queue.pop_front() {
-        if let Some(failure) = node_check(
+        match node_check(
             &node_key,
             &impl_closure.states,
             &spec_closure.states,
             &predecessor,
         ) {
-            return RefinementOutcome {
-                refines: false,
-                failure: Some(failure),
-                stats: Stats {
-                    states: Some(states_count),
-                    transitions: Some(transitions_count),
-                },
-            };
+            NodeAction::Continue => {}
+            NodeAction::Prune => continue,
+            NodeAction::Fail(failure) => {
+                return RefinementOutcome {
+                    refines: false,
+                    failure: Some(failure),
+                    stats: Stats {
+                        states: Some(states_count),
+                        transitions: Some(transitions_count),
+                    },
+                }
+            }
         }
 
         let labels = enabled_visible_labels(impl_, &impl_closure.states);
@@ -378,7 +413,7 @@ fn trace_includes(
     bfs_refinement(
         spec,
         impl_,
-        |_node_key, _impl_states, _spec_states, _pred| None,
+        |_node_key, _impl_states, _spec_states, _pred| NodeAction::Continue,
     )
 }
 
@@ -411,12 +446,63 @@ fn failures_includes(
             let mut tags = vec!["refusal_mismatch".to_string()];
             tags.extend(witness.into_iter().map(|label| format!("refuse:{label}")));
 
-            return Some(RefinementFailure {
+            return NodeAction::Fail(RefinementFailure {
                 trace: reconstruct_trace(pred, node_key),
                 tags,
             });
         }
-        None
+        NodeAction::Continue
+    })
+}
+
+fn failures_divergences_includes(
+    spec: &CspmTransitionProvider,
+    impl_: &CspmTransitionProvider,
+) -> RefinementOutcome {
+    bfs_refinement(spec, impl_, |node_key, impl_states, spec_states, pred| {
+        let spec_diverges = closure_has_tau_cycle(spec, spec_states);
+        let impl_diverges = closure_has_tau_cycle(impl_, impl_states);
+        if impl_diverges && !spec_diverges {
+            let mut trace = reconstruct_trace(pred, node_key);
+            trace.push(TAU.to_string());
+            return NodeAction::Fail(RefinementFailure {
+                trace,
+                tags: vec!["divergence_mismatch".to_string(), "divergence".to_string()],
+            });
+        }
+        if spec_diverges {
+            return NodeAction::Prune;
+        }
+
+        let spec_stable_offers = stable_offer_sets(spec, spec_states);
+        for impl_state in impl_states {
+            if !is_stable(impl_, impl_state) {
+                continue;
+            }
+            let impl_offer = offered_visible_labels(impl_, impl_state);
+            let ok = spec_stable_offers
+                .iter()
+                .any(|spec_offer| spec_offer.is_subset(&impl_offer));
+            if ok {
+                continue;
+            }
+
+            let mut witness = BTreeSet::<String>::new();
+            for spec_offer in &spec_stable_offers {
+                if let Some(label) = spec_offer.difference(&impl_offer).next() {
+                    witness.insert(label.clone());
+                }
+            }
+
+            let mut tags = vec!["refusal_mismatch".to_string()];
+            tags.extend(witness.into_iter().map(|label| format!("refuse:{label}")));
+            return NodeAction::Fail(RefinementFailure {
+                trace: reconstruct_trace(pred, node_key),
+                tags,
+            });
+        }
+
+        NodeAction::Continue
     })
 }
 

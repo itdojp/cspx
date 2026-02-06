@@ -1,0 +1,3 @@
+-- P220: impl diverges via hiding (tau-loop)
+channel a
+IMPL = (a -> IMPL) \\ {|a|}
