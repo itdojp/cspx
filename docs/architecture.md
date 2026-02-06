@@ -46,5 +46,11 @@ flowchart LR
 - `is_minimized`: oracle 検証のうえ「これ以上 1 イベント削除しても fail を維持できない」場合のみ `true`。
   - これは局所最小を意味し、グローバル最短（最小長）を保証しない。
 
+## SourceSpan 伝播（Phase 5 / v0.1）
+- parser/typecheck が付与した `Spanned<ProcessExpr>.span` を IR で保持する。
+- checker は `counterexample_span`（`crates/cspx-core/src/counterexample_span.rs`）経由で反例へ span を写像する。
+- property assertion 選択時は、選択された対象 process の span を優先して `counterexample.source_spans` に反映する。
+- refinement では spec/impl 双方の span を収集し、重複除去した上で反例へ付与する。
+
 ## スケール設計
 - DiskStateStore / explore_parallel の仕様は `docs/scale.md` を参照。

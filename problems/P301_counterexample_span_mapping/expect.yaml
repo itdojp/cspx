@@ -10,7 +10,7 @@ checks:
       trace_len:
         eq: 0
       tags:
-        contains: ["deadlock"]
+        contains: ["deadlock", "kind:deadlock", "explained"]
       source_spans:
         any:
           - path:

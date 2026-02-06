@@ -1,1 +1,1 @@
-span の位置情報を将来評価する予定。現状は unsupported/error を期待。
+counterexample の `source_spans` が assertion 対象 process（`System`）の位置を指すことを回帰する。

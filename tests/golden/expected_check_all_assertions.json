@@ -41,7 +41,9 @@
         ],
         "is_minimized": false,
         "tags": [
-          "deadlock"
+          "deadlock",
+          "kind:deadlock",
+          "explained"
         ],
         "source_spans": [
           {
