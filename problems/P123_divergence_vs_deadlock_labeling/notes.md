@@ -1,1 +1,1 @@
-分類の安定性テスト（将来は原因タグを期待値に入れる）。
+deadlock free は `pass`（τ 遷移があるため deadlock しない）、divergence free は `fail`（到達可能な τ-loop）を期待。

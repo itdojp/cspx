@@ -1,9 +1,26 @@
+exit_code:
+  eq: 1
 status:
-  in: ["unsupported", "error"]
+  eq: "fail"
 checks:
-  - name: check
+  - name:
+      eq: "check"
     status:
-      in: ["unsupported", "error"]
-    reason:
-      kind:
-        in: ["unsupported_syntax", "not_implemented", "invalid_input"]
+      eq: "fail"
+    counterexample:
+      present: true
+      trace_len:
+        eq: 2
+      tags:
+        contains: ["divergence"]
+      source_spans:
+        any:
+          - path:
+              contains: "model.cspm"
+            start_line:
+              eq: 6
+    stats:
+      states:
+        eq: 2
+      transitions:
+        eq: 2

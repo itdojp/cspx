@@ -1,1 +1,1 @@
-現状は divergence assertion 未実装のため、unsupported/error を期待。
+到達可能な τ-cycle が無いため `pass` を期待。
