@@ -30,7 +30,16 @@
     "invocation": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["command", "args", "format", "timeout_ms", "memory_mb", "seed"],
+      "required": [
+        "command",
+        "args",
+        "format",
+        "timeout_ms",
+        "memory_mb",
+        "parallel",
+        "deterministic",
+        "seed"
+      ],
       "properties": {
         "command": { "type": "string" },
         "args": {
@@ -40,6 +49,8 @@
         "format": { "enum": ["json", "text"] },
         "timeout_ms": { "type": ["integer", "null"] },
         "memory_mb": { "type": ["integer", "null"] },
+        "parallel": { "type": "integer", "minimum": 1 },
+        "deterministic": { "type": "boolean" },
         "seed": { "type": "integer", "minimum": 0 }
       }
     },

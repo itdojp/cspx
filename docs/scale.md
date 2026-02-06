@@ -82,14 +82,14 @@ deterministic mode は「スケジュールに依存しない探索順」を仕�
 
 #### 前提条件（MUST）
 - ワーカー数が固定であること（同一 `workers`）。
-- `StateCodec::encode` が決定的であること（同一 state → 同一 bytes）。
-- v0.1 で既に満たしているように、`TransitionProvider::transitions` が決定的順序であることを維持する（例: `label` 昇順、次状態を `StateCodec` bytes 昇順）。
+- 状態順序キーが決定的であること（現行実装では `State: Ord` による全順序）。
+- v0.1 で既に満たしているように、`TransitionProvider::transitions` が決定的順序であることを維持する（例: `label` 昇順、次状態も決定的順序）。
 
 #### 探索順の規約（SHOULD）
-- 各探索レベルごとに、まず現在の frontier を `StateCodec` bytes の昇順に正規化（ソート）する。
+- 各探索レベルごとに、まず現在の frontier を決定的な状態順序（現行実装では `Ord`）で正規化（ソート）する。
 - 正規化済み frontier を、その順序を保持したまま **固定順**でワーカーに割当（例: 連続チャンク分割）する。
 - 各ワーカーは割り当てられた部分 frontier を処理し、生成した候補状態列を **その入力順を維持した列**として返す。
-- すべてのワーカー結果を、割り当てチャンクの元の並び順（昇順に正規化された frontier の順序）どおりに連結して候補集合を構成し、次 frontier は「候補集合を `StateCodec` bytes 昇順にソート → 重複除外 → frontier 化」する。
+- すべてのワーカー結果を、割り当てチャンクの元の並び順（昇順に正規化された frontier の順序）どおりに連結して候補集合を構成し、次 frontier は「候補集合を決定的順序でソート → 重複除外 → frontier 化」する。
 
 #### 出力の決定性（MUST）
 - 同一入力/同一 `seed`/同一 `workers` で、少なくとも以下が一致する:
@@ -99,4 +99,4 @@ deterministic mode は「スケジュールに依存しない探索順」を仕�
 ### CLI への反映（v0.2+）
 - `--parallel <n>`: 並列探索を有効化（`n>=1`）。
 - `--deterministic`: deterministic mode を有効化。
-- `--seed <n>`: deterministic mode で必須（探索順の将来拡張に備え、結果 JSON に記録する）。
+- `--seed <n>`: deterministic mode で必須（現行は将来拡張向け予約値として結果 JSON に記録する）。
