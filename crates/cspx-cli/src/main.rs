@@ -544,12 +544,12 @@ fn run_all_assertions(file: &Path, io_error: Option<&String>) -> Vec<CheckResult
             cspx_core::ir::AssertionDecl::Refinement { spec, model, impl_ } => {
                 let model_str = refinement_op_str(*model).to_string();
                 let check_target = format!("{} [{}= {}", spec.value, model_str, impl_.value);
-                out.push(build_stub_check_result(
-                    "refine",
-                    Some(model_str),
-                    Some(check_target),
-                    None,
-                    "refinement assertion not implemented yet",
+                out.push(run_refinement_assertion(
+                    &module,
+                    &spec.value,
+                    *model,
+                    &impl_.value,
+                    check_target,
                 ));
             }
         }
@@ -651,6 +651,64 @@ fn run_determinism_property_assertion(
         target: Some(target_desc),
     };
     checker.check(&request, &check_module)
+}
+
+fn run_refinement_assertion(
+    module: &cspx_core::ir::Module,
+    spec_proc: &str,
+    model: cspx_core::ir::RefinementOp,
+    impl_proc: &str,
+    target_desc: String,
+) -> CheckResult {
+    let Some(spec_expr) = module
+        .declarations
+        .iter()
+        .find(|decl| decl.name.value == spec_proc)
+        .map(|decl| decl.expr.clone())
+    else {
+        return error_check(
+            "refine",
+            Some(refinement_op_str(model).to_string()),
+            Some(target_desc),
+            ReasonKind::InvalidInput,
+            format!("undefined process: {spec_proc}"),
+        );
+    };
+    let Some(impl_expr) = module
+        .declarations
+        .iter()
+        .find(|decl| decl.name.value == impl_proc)
+        .map(|decl| decl.expr.clone())
+    else {
+        return error_check(
+            "refine",
+            Some(refinement_op_str(model).to_string()),
+            Some(target_desc),
+            ReasonKind::InvalidInput,
+            format!("undefined process: {impl_proc}"),
+        );
+    };
+
+    let mut spec_module = module.clone();
+    spec_module.entry = Some(spec_expr);
+    let mut impl_module = module.clone();
+    impl_module.entry = Some(impl_expr);
+
+    let checker = RefinementChecker;
+    let request = CheckRequest {
+        command: cspx_core::check::CheckCommand::Refine,
+        model: Some(match model {
+            cspx_core::ir::RefinementOp::T => cspx_core::check::RefinementModel::T,
+            cspx_core::ir::RefinementOp::F => cspx_core::check::RefinementModel::F,
+            cspx_core::ir::RefinementOp::FD => cspx_core::check::RefinementModel::FD,
+        }),
+        target: Some(target_desc),
+    };
+    let input = RefinementInput {
+        spec: spec_module,
+        impl_: impl_module,
+    };
+    checker.check(&request, &input)
 }
 
 fn property_kind_str(kind: cspx_core::ir::PropertyKind) -> &'static str {
