@@ -51,6 +51,14 @@
 - spec が divergence 可能な trace 以降は chaos とみなし、後続の trace/refusal の検査を打ち切る（v0.1）。
 - divergence mismatch の反例は trace の末尾に `tau` を 1 つ付与し、`tags` に `divergence_mismatch` を付与する。
 
+## Counterexample tags taxonomy（v0.1）
+反例の `tags` は次の分類を基本とする。
+
+- 主要カテゴリ: `deadlock` / `divergence` / `nondeterminism` / `refinement`
+- モデル識別: `model:T` / `model:F` / `model:FD`
+- 詳細原因: `label:<event>` / `trace_mismatch` / `refusal_mismatch` / `refuse:<event>` / `divergence_mismatch`
+- Explainer 付与: `kind:<主要カテゴリ>` / `explained`
+
 ## トップレベル status/exit_code の集約（v0.1）
 `checks` が複数ある場合、トップレベルの `status`/`exit_code` は以下の優先順位で集約する。
 

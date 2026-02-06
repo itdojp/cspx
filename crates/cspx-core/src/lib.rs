@@ -1,5 +1,6 @@
 mod assertion_select;
 pub mod check;
+pub mod counterexample_span;
 pub mod check_deadlock;
 pub mod check_determinism;
 pub mod check_divergence;

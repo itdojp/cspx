@@ -1,4 +1,5 @@
 use crate::check::{CheckRequest, CheckResult, Checker, RefinementModel};
+use crate::counterexample_span::refinement_counterexample_spans;
 use crate::explain::Explainer;
 use crate::explain_simple::BasicExplainer;
 use crate::ir::Module;
@@ -8,8 +9,7 @@ use crate::minimize::Minimizer;
 use crate::minimize_simple::IdentityMinimizer;
 use crate::state_codec::StateCodec;
 use crate::types::{
-    Counterexample, CounterexampleEvent, CounterexampleType, Reason, ReasonKind, SourceSpan, Stats,
-    Status,
+    Counterexample, CounterexampleEvent, CounterexampleType, Reason, ReasonKind, Stats, Status,
 };
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
@@ -113,7 +113,7 @@ impl Checker<RefinementInput> for RefinementChecker {
             events,
             is_minimized: false,
             tags,
-            source_spans: collect_spans(&input.spec, &input.impl_),
+            source_spans: refinement_counterexample_spans(&input.spec, &input.impl_),
         };
         let minimizer = IdentityMinimizer;
         let counterexample = minimizer.minimize(counterexample);
@@ -498,21 +498,4 @@ fn refusal_mismatch_tags(
         }
     }
     tags
-}
-
-fn collect_spans(spec: &Module, impl_: &Module) -> Vec<SourceSpan> {
-    let mut spans = Vec::new();
-    spans.extend(module_spans(spec));
-    spans.extend(module_spans(impl_));
-    spans
-}
-
-fn module_spans(module: &Module) -> Vec<SourceSpan> {
-    if let Some(entry) = &module.entry {
-        return vec![entry.span.clone()];
-    }
-    if let Some(decl) = module.declarations.first() {
-        return vec![decl.expr.span.clone()];
-    }
-    Vec::new()
 }
