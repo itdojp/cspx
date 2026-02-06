@@ -249,7 +249,7 @@ fn reconstruct_trace(
 fn is_stable(provider: &CspmTransitionProvider, state: &State) -> bool {
     provider
         .transitions(state)
-        .iter()
+        .into_iter()
         .all(|(transition, _)| transition.label != TAU)
 }
 
@@ -332,9 +332,6 @@ where
             transitions_count += 1;
 
             let impl_next = next_by_label(impl_, &impl_closure.states, &label);
-            if impl_next.states.is_empty() {
-                continue;
-            }
             let spec_next = next_by_label(spec, &spec_closure.states, &label);
             if spec_next.states.is_empty() {
                 let mut trace = reconstruct_trace(&predecessor, &node_key);
