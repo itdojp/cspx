@@ -24,7 +24,7 @@
 - **同一判定**: エンコード済みバイト列の完全一致（`Vec<u8>` の一致）。
 - **ロード**:
   - 起動時に全行を読み込み、hex decode して `HashSet<Vec<u8>>` を構築する。
-  - decode したバイト列は `StateCodec::decode` で **妥当性検証**する（不正な record は `open` を `InvalidData` で失敗させる）。
+  - decode したバイト列は `StateCodec::decode` で **妥当性検証**し、1件でも不正な record があれば `open` 全体を `InvalidData` エラーとして失敗させる（不正な record のスキップや部分的なロードは行わない）。
 - **書き込み**:
   - `insert` のたびに `append` で開き、1行を書き込む（fsync/flush は仕様化していない）。
   - ロック（排他）は行わない。
@@ -49,7 +49,7 @@
   - hash のみで同一判定せず、必要に応じて `state.log` の実体で検証できること（衝突回避）。
 - **推奨フォーマット（案）**:
   - 1行（または fixed-size レコード）に `hash64` と `offset`（log 内位置）を保存する。
-  - `hash64` は `StateCodec::encode(state)` のバイト列から計算（アルゴリズムと seed をヘッダに記録）。
+  - `hash64` は `StateCodec::encode(state)` のバイト列から計算（アルゴリズムと `exploration_seed`（ハッシュ計算にも用いる）をヘッダに記録）。
   - `open` 時は idx を読み込み、`hash64 -> offsets` を構築し、衝突時は `offset` から log を参照して最終一致を確認する。
 - **再構築**:
   - `state.idx` が無い/破損している場合、`state.log` をスキャンして idx を再生成する。
@@ -57,7 +57,7 @@
 #### 排他制御（ロック）
 - 同一 store（同一パス）への複数プロセス同時書き込みは **禁止**する。
 - `open` は排他ロック取得に失敗した場合、エラーで失敗させる（診断可能なメッセージを返す）。
-- ロック方式は OS の advisory lock を優先し、失敗時のフォールバック（ロックファイル）を仕様化する。
+- ロック方式は OS の advisory lock を優先し、取得に失敗した場合は `state.log` と同一ディレクトリに `state.lock` という名前のロックファイルを用いるフォールバック方式を仕様化する。
 
 #### クラッシュ復旧
 - `state.log` の末尾が部分書き込みで壊れている場合に備え、少なくとも「末尾の不完全 record を無視して復旧」できること。
@@ -73,7 +73,7 @@
 
 ### 現状の位置づけ（v0.1）
 - `explore_parallel` は **探索順序の決定性を保証しない**（counterexample 生成器から利用する場合、反例が変動し得る）。
-- ただし、次の前提が満たされる限り、到達状態集合と統計値が一致することを目標とする:
+- ただし、次の前提が満たされる限り、**最終的な到達状態集合**と**統計値（`states` / `transitions`）**が単一スレッド探索と一致することを目標とする（探索の途中経過や各レベル内での探索順序の一致は保証しない）:
   - `TransitionProvider::transitions` が決定的順序で遷移を返す
   - 探索対象が有限
 
@@ -83,12 +83,13 @@ deterministic mode は「スケジュールに依存しない探索順」を仕�
 #### 前提条件（MUST）
 - ワーカー数が固定であること（同一 `workers`）。
 - `StateCodec::encode` が決定的であること（同一 state → 同一 bytes）。
-- `TransitionProvider::transitions` が決定的順序であること（例: `label` 昇順、次状態を `StateCodec` bytes 昇順）。
+- v0.1 で既に満たしているように、`TransitionProvider::transitions` が決定的順序であることを維持する（例: `label` 昇順、次状態を `StateCodec` bytes 昇順）。
 
 #### 探索順の規約（SHOULD）
-- frontier は `StateCodec` bytes の昇順に正規化する。
-- frontier を **固定順**でワーカーに割当（連続チャンク分割など）。
-- 各ワーカーの結果は入力順に集約し、次 frontier は「候補集合を bytes 昇順にソート→重複除外→frontier 化」する。
+- 各探索レベルごとに、まず現在の frontier を `StateCodec` bytes の昇順に正規化（ソート）する。
+- 正規化済み frontier を、その順序を保持したまま **固定順**でワーカーに割当（例: 連続チャンク分割）する。
+- 各ワーカーは割り当てられた部分 frontier を処理し、生成した候補状態列を **その入力順を維持した列**として返す。
+- すべてのワーカー結果を、割り当てチャンクの元の並び順（昇順に正規化された frontier の順序）どおりに連結して候補集合を構成し、次 frontier は「候補集合を `StateCodec` bytes 昇順にソート → 重複除外 → frontier 化」する。
 
 #### 出力の決定性（MUST）
 - 同一入力/同一 `seed`/同一 `workers` で、少なくとも以下が一致する:
