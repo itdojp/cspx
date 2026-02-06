@@ -7,7 +7,7 @@
 |---|---|---|---|
 | `schema_version` | string | yes | 固定値 `"0.1"` |
 | `tool` | object | yes | ツール情報（`name`, `version`, `git_sha`） |
-| `invocation` | object | yes | 実行情報（`command`, `args`, `format`, `timeout_ms`, `memory_mb`, `seed`） |
+| `invocation` | object | yes | 実行情報（`command`, `args`, `format`, `timeout_ms`, `memory_mb`, `parallel`, `deterministic`, `seed`） |
 | `inputs` | array | yes | 入力一覧（`path`, `sha256`） |
 | `status` | enum | yes | `pass | fail | unsupported | timeout | out_of_memory | error` |
 | `exit_code` | integer | yes | CLI の exit code と一致 |
@@ -63,6 +63,8 @@
     "format": "json",
     "timeout_ms": null,
     "memory_mb": null,
+    "parallel": 1,
+    "deterministic": false,
     "seed": 0
   },
   "inputs": [

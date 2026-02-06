@@ -31,7 +31,9 @@ pub use check_refine::{RefinementChecker, RefinementInput};
 pub use disk_store::DiskStateStore;
 pub use explain::Explainer;
 pub use explain_simple::BasicExplainer;
-pub use explore::{explore, explore_parallel};
+pub use explore::{
+    explore, explore_parallel, explore_parallel_with_options, ParallelExploreOptions,
+};
 pub use frontend::{Frontend, FrontendOutput};
 pub use frontend_simple::{FrontendError, FrontendErrorKind, SimpleFrontend};
 pub use ir::CoreIr;

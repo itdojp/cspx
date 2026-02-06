@@ -13,6 +13,8 @@
     "format": "json",
     "timeout_ms": null,
     "memory_mb": null,
+    "parallel": 1,
+    "deterministic": false,
     "seed": 0
   },
   "inputs": [

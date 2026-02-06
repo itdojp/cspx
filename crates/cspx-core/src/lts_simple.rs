@@ -3,7 +3,7 @@ use crate::lts::{Transition, TransitionProvider};
 use crate::types::SourceSpan;
 use std::fmt::{Display, Formatter};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum SimpleState {
     Stop,
 }

@@ -61,7 +61,7 @@ struct Program {
     resolved: Vec<ExprId>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum CspmState {
     Expr {
         expr: ExprId,
