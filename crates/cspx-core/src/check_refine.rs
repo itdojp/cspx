@@ -262,9 +262,6 @@ fn trace_includes(
 
             let (impl_next_states, impl_next_sig) =
                 next_by_label(impl_, &codec, &impl_states, &label);
-            if impl_next_states.is_empty() {
-                continue;
-            }
             let (spec_next_states, spec_next_sig) =
                 next_by_label(spec, &codec, &spec_states, &label);
             if spec_next_states.is_empty() {
