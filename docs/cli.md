@@ -31,6 +31,15 @@
 - 未実装の assertion は `unsupported` + `reason.kind=not_implemented` とする。
 - `checks` は複数になり得る（最低 1 件）。
 
+## `refine`（v0.1）
+`cspx refine --model T <spec> <impl>` は traces refinement（T）を検査する。
+
+- `tau` は内部遷移として扱い、trace（可視列）からは除外する。
+- `impl` が実行できる可視 trace が `spec` でも実行できること（`Traces(impl) ⊆ Traces(spec)`）。
+- `fail` 時は、`impl` では実行できるが `spec` では実行できない可視 trace を counterexample として返す（最短性は保証しない）。
+
+`--model F|FD` は未実装（現状は `unsupported` + `reason.kind=not_implemented`）。
+
 ## トップレベル status/exit_code の集約（v0.1）
 `checks` が複数ある場合、トップレベルの `status`/`exit_code` は以下の優先順位で集約する。
 

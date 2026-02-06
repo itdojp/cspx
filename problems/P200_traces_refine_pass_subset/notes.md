@@ -1,1 +1,1 @@
-traces refinement の pass ケース。現状は unsupported/error を期待。
+traces refinement（T）の pass ケース。`Traces(impl) ⊆ Traces(spec)` のため `pass` を期待。
