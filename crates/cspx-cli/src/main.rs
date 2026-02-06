@@ -201,17 +201,7 @@ fn execute(cli: &Cli) -> Result<(Status, i32, CheckResult, Vec<InputInfo>, Invoc
                 None
             };
             let check = if let Some(assertion) = &args.assert {
-                if assertion == "deadlock free" {
-                    run_deadlock_check(&args.file, io_error.as_ref(), assertion)
-                } else {
-                    build_stub_check_result(
-                        "check",
-                        None,
-                        target.clone(),
-                        io_error.as_ref(),
-                        "assertion not implemented yet",
-                    )
-                }
+                run_check_by_assertion(&args.file, io_error.as_ref(), assertion)
             } else if args.all_assertions {
                 build_stub_check_result(
                     "check",
@@ -432,6 +422,102 @@ fn build_stub_check_result(
     }
 }
 
+fn run_check_by_assertion(file: &Path, io_error: Option<&String>, assertion: &str) -> CheckResult {
+    let supported = ["deadlock free", "divergence free", "deterministic"];
+    if !supported.contains(&assertion) {
+        return error_check(
+            "check",
+            None,
+            Some(assertion.to_string()),
+            ReasonKind::InvalidInput,
+            format!(
+                "unknown assertion: {assertion} (supported: {})",
+                supported.join(", ")
+            ),
+        );
+    }
+
+    let module = match parse_module_for_check(file, io_error, assertion) {
+        Ok(module) => module,
+        Err(check) => return *check,
+    };
+
+    if assertion == "deadlock free" {
+        let checker = DeadlockChecker;
+        let request = CheckRequest {
+            command: cspx_core::check::CheckCommand::Check,
+            model: None,
+            target: Some(assertion.to_string()),
+        };
+        return checker.check(&request, &module);
+    }
+
+    build_stub_check_result(
+        "check",
+        None,
+        Some(assertion.to_string()),
+        None,
+        "assertion not implemented yet",
+    )
+}
+
+fn parse_module_for_check(
+    file: &Path,
+    io_error: Option<&String>,
+    assertion: &str,
+) -> Result<cspx_core::ir::Module, Box<CheckResult>> {
+    if let Some(message) = io_error {
+        return Err(Box::new(error_check(
+            "check",
+            None,
+            Some(assertion.to_string()),
+            ReasonKind::InvalidInput,
+            message.clone(),
+        )));
+    }
+
+    let source = match fs::read_to_string(file) {
+        Ok(source) => source,
+        Err(err) => {
+            return Err(Box::new(error_check(
+                "check",
+                None,
+                Some(assertion.to_string()),
+                ReasonKind::InvalidInput,
+                format!("{}: {err}", file.display()),
+            )))
+        }
+    };
+
+    let frontend = SimpleFrontend;
+    match frontend.parse_and_typecheck(&source, &file.to_string_lossy()) {
+        Ok(output) => Ok(output.ir),
+        Err(err) => {
+            let (status, reason_kind) = match err.kind {
+                FrontendErrorKind::UnsupportedSyntax => {
+                    (Status::Unsupported, ReasonKind::UnsupportedSyntax)
+                }
+                FrontendErrorKind::InvalidInput => (Status::Error, ReasonKind::InvalidInput),
+            };
+            Err(Box::new(CheckResult {
+                name: "check".to_string(),
+                model: None,
+                target: Some(assertion.to_string()),
+                status,
+                reason: Some(Reason {
+                    kind: reason_kind,
+                    message: Some(err.to_string()),
+                }),
+                counterexample: None,
+                stats: Some(Stats {
+                    states: None,
+                    transitions: None,
+                }),
+            }))
+        }
+    }
+}
+
 fn error_check(
     name: &str,
     model: Option<String>,
@@ -453,67 +539,6 @@ fn error_check(
             states: None,
             transitions: None,
         }),
-    }
-}
-
-fn run_deadlock_check(file: &Path, io_error: Option<&String>, assertion: &str) -> CheckResult {
-    if let Some(message) = io_error {
-        return error_check(
-            "check",
-            None,
-            Some(assertion.to_string()),
-            ReasonKind::InvalidInput,
-            message.clone(),
-        );
-    }
-
-    let source = match fs::read_to_string(file) {
-        Ok(source) => source,
-        Err(err) => {
-            return error_check(
-                "check",
-                None,
-                Some(assertion.to_string()),
-                ReasonKind::InvalidInput,
-                format!("{}: {err}", file.display()),
-            )
-        }
-    };
-
-    let frontend = SimpleFrontend;
-    match frontend.parse_and_typecheck(&source, &file.to_string_lossy()) {
-        Ok(output) => {
-            let checker = DeadlockChecker;
-            let request = CheckRequest {
-                command: cspx_core::check::CheckCommand::Check,
-                model: None,
-                target: Some(assertion.to_string()),
-            };
-            checker.check(&request, &output.ir)
-        }
-        Err(err) => {
-            let (status, reason_kind) = match err.kind {
-                FrontendErrorKind::UnsupportedSyntax => {
-                    (Status::Unsupported, ReasonKind::UnsupportedSyntax)
-                }
-                FrontendErrorKind::InvalidInput => (Status::Error, ReasonKind::InvalidInput),
-            };
-            CheckResult {
-                name: "check".to_string(),
-                model: None,
-                target: Some(assertion.to_string()),
-                status,
-                reason: Some(Reason {
-                    kind: reason_kind,
-                    message: Some(err.to_string()),
-                }),
-                counterexample: None,
-                stats: Some(Stats {
-                    states: None,
-                    transitions: None,
-                }),
-            }
-        }
     }
 }
 

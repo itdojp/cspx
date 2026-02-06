@@ -114,14 +114,14 @@ pub struct ProcessDecl {
     pub expr: Spanned<ProcessExpr>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PropertyKind {
     DeadlockFree,
     DivergenceFree,
     Deterministic,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PropertyModel {
     F,
     FD,

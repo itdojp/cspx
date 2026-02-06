@@ -1,3 +1,4 @@
+mod assertion_select;
 pub mod check;
 pub mod check_deadlock;
 pub mod check_refine;
