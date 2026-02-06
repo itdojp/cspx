@@ -27,19 +27,132 @@ pub struct Spanned<T> {
 }
 
 #[derive(Debug, Clone)]
+pub struct ChannelDecl {
+    pub names: Vec<Spanned<String>>,
+    pub domain: Option<Spanned<ChannelDomain>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum ChannelDomain {
+    IntRange {
+        min: Spanned<u64>,
+        max: Spanned<u64>,
+    },
+    NamedType(Spanned<String>),
+}
+
+#[derive(Debug, Clone)]
+pub struct Event {
+    pub channel: Spanned<String>,
+    pub seg: Option<EventSeg>,
+}
+
+#[derive(Debug, Clone)]
+pub enum EventSeg {
+    Dot(Spanned<EventValue>),
+    Out(Spanned<EventValue>),
+    In(Spanned<EventInput>),
+}
+
+#[derive(Debug, Clone)]
+pub enum EventValue {
+    Int(u64),
+    Ident(String),
+}
+
+#[derive(Debug, Clone)]
+pub enum EventInput {
+    Int(u64),
+    Bind(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct EventSet {
+    pub channels: Vec<Spanned<String>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChoiceKind {
+    External,
+    Internal,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParallelKind {
+    Interleaving,
+    Interface,
+}
+
+#[derive(Debug, Clone)]
 pub enum ProcessExpr {
     Stop,
+    Ref(Spanned<String>),
+    Prefix {
+        event: Spanned<Event>,
+        next: Box<Spanned<ProcessExpr>>,
+    },
+    Choice {
+        kind: ChoiceKind,
+        left: Box<Spanned<ProcessExpr>>,
+        right: Box<Spanned<ProcessExpr>>,
+    },
+    Parallel {
+        kind: ParallelKind,
+        left: Box<Spanned<ProcessExpr>>,
+        right: Box<Spanned<ProcessExpr>>,
+        sync: Option<EventSet>,
+    },
+    Hide {
+        inner: Box<Spanned<ProcessExpr>>,
+        hide: EventSet,
+    },
 }
 
 #[derive(Debug, Clone)]
 pub struct ProcessDecl {
-    pub name: String,
+    pub name: Spanned<String>,
     pub expr: Spanned<ProcessExpr>,
 }
 
 #[derive(Debug, Clone)]
+pub enum PropertyKind {
+    DeadlockFree,
+    DivergenceFree,
+    Deterministic,
+}
+
+#[derive(Debug, Clone)]
+pub enum PropertyModel {
+    F,
+    FD,
+}
+
+#[derive(Debug, Clone)]
+pub enum RefinementOp {
+    T,
+    F,
+    FD,
+}
+
+#[derive(Debug, Clone)]
+pub enum AssertionDecl {
+    Property {
+        target: Spanned<String>,
+        kind: PropertyKind,
+        model: PropertyModel,
+    },
+    Refinement {
+        spec: Spanned<String>,
+        model: RefinementOp,
+        impl_: Spanned<String>,
+    },
+}
+
+#[derive(Debug, Clone)]
 pub struct Module {
+    pub channels: Vec<ChannelDecl>,
     pub declarations: Vec<ProcessDecl>,
+    pub assertions: Vec<AssertionDecl>,
     pub entry: Option<Spanned<ProcessExpr>>,
 }
 

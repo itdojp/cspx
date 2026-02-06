@@ -5,7 +5,9 @@ use cspx_core::{
 #[test]
 fn explore_stop_yields_single_state() {
     let module = cspx_core::ir::Module {
+        channels: Vec::new(),
         declarations: Vec::new(),
+        assertions: Vec::new(),
         entry: Some(cspx_core::ir::Spanned {
             value: cspx_core::ir::ProcessExpr::Stop,
             span: cspx_core::types::SourceSpan {
@@ -30,7 +32,9 @@ fn explore_stop_yields_single_state() {
 #[test]
 fn explore_parallel_stop_yields_single_state() {
     let module = cspx_core::ir::Module {
+        channels: Vec::new(),
         declarations: Vec::new(),
+        assertions: Vec::new(),
         entry: Some(cspx_core::ir::Spanned {
             value: cspx_core::ir::ProcessExpr::Stop,
             span: cspx_core::types::SourceSpan {

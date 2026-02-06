@@ -1,9 +1,7 @@
-status:
-  in: ["unsupported", "error"]
+exit_code: 3
+status: unsupported
 checks:
   - name: typecheck
-    status:
-      in: ["unsupported", "error"]
+    status: unsupported
     reason:
-      kind:
-        in: ["unsupported_syntax", "not_implemented", "invalid_input"]
+      kind: unsupported_syntax
