@@ -6,6 +6,21 @@
 - `cspx check --all-assertions <file>`
 - `cspx refine --model T|F|FD <spec> <impl>`
 
+## `check --assert` のターゲット選択（v0.1）
+`--assert` は **性質名** を指定する（例: `"deadlock free"`）。
+
+`cspx check --assert "<ASSERT>" <file>` 実行時、検査対象（entry）は次の規約で決定する。
+
+1. `<file>` 内に `<ASSERT>` に一致する property assertion（例: `assert P :[deadlock free [F]]`）が 1 件以上ある場合、**最後に出現する assertion** の `P` を entry として採用する（last-wins）。
+2. 1) が無く、トップレベルの entry 式（宣言ではない process 式）がある場合、それを entry とする。
+3. 1) と 2) が無く、process 宣言が 1 件のみの場合、その宣言を entry とする。
+4. それ以外はエラー（entry 未指定）。
+
+`--assert` で指定できる性質名（v0.1）:
+- `"deadlock free"`
+- `"divergence free"`
+- `"deterministic"`
+
 ## 共通オプション
 - `--format json|text`（default: `json`）
 - `--output <path>`（default: stdout）

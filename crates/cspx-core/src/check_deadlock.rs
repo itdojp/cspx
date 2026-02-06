@@ -1,5 +1,8 @@
+use crate::assertion_select::{
+    list_property_assertion_candidates, module_for_property_check, property_kind_str,
+};
 use crate::check::{CheckRequest, CheckResult, Checker};
-use crate::ir::{AssertionDecl, Module, ProcessExpr, PropertyKind, Spanned};
+use crate::ir::{Module, PropertyKind};
 use crate::lts::TransitionProvider;
 use crate::lts_cspm::CspmTransitionProvider;
 use crate::types::{
@@ -13,7 +16,7 @@ pub struct DeadlockChecker;
 
 impl Checker<Module> for DeadlockChecker {
     fn check(&self, request: &CheckRequest, input: &Module) -> CheckResult {
-        let module = module_for_deadlock_check(input);
+        let module = module_for_property_check(input, PropertyKind::DeadlockFree);
         match CspmTransitionProvider::from_module(&module) {
             Ok(provider) => deadlock_free_check(&provider, request, &module),
             Err(err) => CheckResult {
@@ -23,7 +26,7 @@ impl Checker<Module> for DeadlockChecker {
                 status: Status::Error,
                 reason: Some(Reason {
                     kind: ReasonKind::InvalidInput,
-                    message: Some(err.to_string()),
+                    message: Some(format_invalid_input(&err.to_string(), input)),
                 }),
                 counterexample: None,
                 stats: Some(Stats {
@@ -33,6 +36,27 @@ impl Checker<Module> for DeadlockChecker {
             },
         }
     }
+}
+
+fn format_invalid_input(original: &str, module: &Module) -> String {
+    if original != "entry process not specified" {
+        return original.to_string();
+    }
+
+    let kind = property_kind_str(PropertyKind::DeadlockFree);
+    let candidates = list_property_assertion_candidates(module);
+    if candidates.is_empty() {
+        return format!(
+            "{original}\nhint: add a top-level entry process expression, or add `assert <P> :[{kind} [F]]`"
+        );
+    }
+
+    let mut lines = vec![
+        original.to_string(),
+        "available property assertions:".to_string(),
+    ];
+    lines.extend(candidates.into_iter().map(|c| format!("- {c}")));
+    lines.join("\n")
 }
 
 fn deadlock_free_check(
@@ -113,38 +137,6 @@ fn deadlock_free_check(
         counterexample: None,
         stats: Some(stats),
     }
-}
-
-fn module_for_deadlock_check(input: &Module) -> Module {
-    if input.entry.is_some() || input.declarations.len() == 1 {
-        return input.clone();
-    }
-
-    let mut module = input.clone();
-    if let Some(entry) = select_deadlock_assert_target_expr(input) {
-        module.entry = Some(entry);
-    }
-    module
-}
-
-fn select_deadlock_assert_target_expr(module: &Module) -> Option<Spanned<ProcessExpr>> {
-    let mut decls = HashMap::<&str, &Spanned<ProcessExpr>>::new();
-    for decl in &module.declarations {
-        decls.insert(decl.name.value.as_str(), &decl.expr);
-    }
-
-    for assertion in module.assertions.iter().rev() {
-        let AssertionDecl::Property { target, kind, .. } = assertion else {
-            continue;
-        };
-        if !matches!(kind, PropertyKind::DeadlockFree) {
-            continue;
-        }
-        if let Some(expr) = decls.get(target.value.as_str()) {
-            return Some((*expr).clone());
-        }
-    }
-    None
 }
 
 fn trace_events<S>(
