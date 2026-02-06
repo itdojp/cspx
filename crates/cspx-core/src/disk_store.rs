@@ -85,11 +85,13 @@ where
             fs::create_dir_all(parent)?;
         }
         let lock = LockGuard::acquire(&paths.lock_path)?;
-        if !paths.log_path.exists() {
-            fs::File::create(&paths.log_path)?;
-        }
-
-        let log_len = fs::metadata(&paths.log_path)?.len();
+        let log_file = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .truncate(false)
+            .open(&paths.log_path)?;
+        let log_len = log_file.metadata()?.len();
         let index = match load_index_from_file(&paths.idx_path, &codec, log_len)? {
             Some(index) => index,
             None => {
@@ -119,9 +121,13 @@ where
         if self.index.contains(&bytes) {
             return Ok(false);
         }
+
         let log_len = append_log_record(&self.paths.log_path, &bytes)?;
-        self.index.insert(bytes);
-        write_index_file(&self.paths.idx_path, &self.index, log_len)?;
+        self.index.insert(bytes.clone());
+        if let Err(err) = write_index_file(&self.paths.idx_path, &self.index, log_len) {
+            self.index.remove(&bytes);
+            return Err(err);
+        }
         Ok(true)
     }
 
@@ -217,14 +223,14 @@ where
             }
         }
         line_start = cursor + 1;
-        normalized_len = line_start as u64;
+        normalized_len = usize_to_u64(line_start)?;
     }
 
     if line_start < data.len() {
         let file = OpenOptions::new().write(true).open(log_path)?;
         file.set_len(normalized_len)?;
     } else {
-        normalized_len = data.len() as u64;
+        normalized_len = usize_to_u64(data.len())?;
     }
 
     Ok((index, normalized_len))
@@ -242,11 +248,18 @@ fn write_index_file(path: &Path, index: &HashSet<Vec<u8>>, log_len: u64) -> io::
     }
     file.flush()?;
 
-    if path.exists() {
-        fs::remove_file(path)?;
+    match fs::rename(&tmp_path, path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
+            fs::remove_file(path)?;
+            fs::rename(&tmp_path, path)?;
+            Ok(())
+        }
+        Err(err) => {
+            let _ = fs::remove_file(&tmp_path);
+            Err(err)
+        }
     }
-    fs::rename(&tmp_path, path)?;
-    Ok(())
 }
 
 fn decode_validated_record<S, C>(line: &str, codec: &C) -> Option<Vec<u8>>
@@ -259,4 +272,8 @@ where
     }
     codec.decode(&bytes).ok()?;
     Some(bytes)
+}
+
+fn usize_to_u64(value: usize) -> io::Result<u64> {
+    u64::try_from(value).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "size overflow"))
 }
