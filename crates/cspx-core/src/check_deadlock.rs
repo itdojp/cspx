@@ -1,7 +1,7 @@
 use crate::check::{CheckRequest, CheckResult, Checker};
-use crate::ir::Module;
+use crate::ir::{AssertionDecl, Module, ProcessExpr, PropertyKind, Spanned};
 use crate::lts::TransitionProvider;
-use crate::lts_simple::SimpleTransitionProvider;
+use crate::lts_cspm::CspmTransitionProvider;
 use crate::types::{
     Counterexample, CounterexampleEvent, CounterexampleType, Reason, ReasonKind, SourceSpan, Stats,
     Status,
@@ -13,8 +13,9 @@ pub struct DeadlockChecker;
 
 impl Checker<Module> for DeadlockChecker {
     fn check(&self, request: &CheckRequest, input: &Module) -> CheckResult {
-        match SimpleTransitionProvider::from_module(input) {
-            Ok(provider) => deadlock_free_check(&provider, request, input),
+        let module = module_for_deadlock_check(input);
+        match CspmTransitionProvider::from_module(&module) {
+            Ok(provider) => deadlock_free_check(&provider, request, &module),
             Err(err) => CheckResult {
                 name: "check".to_string(),
                 model: None,
@@ -35,18 +36,18 @@ impl Checker<Module> for DeadlockChecker {
 }
 
 fn deadlock_free_check(
-    provider: &SimpleTransitionProvider,
+    provider: &CspmTransitionProvider,
     request: &CheckRequest,
     module: &Module,
 ) -> CheckResult {
     let mut visited: HashMap<
-        <SimpleTransitionProvider as TransitionProvider>::State,
+        <CspmTransitionProvider as TransitionProvider>::State,
         Option<(
-            <SimpleTransitionProvider as TransitionProvider>::State,
+            <CspmTransitionProvider as TransitionProvider>::State,
             String,
         )>,
     > = HashMap::new();
-    let mut queue: VecDeque<<SimpleTransitionProvider as TransitionProvider>::State> =
+    let mut queue: VecDeque<<CspmTransitionProvider as TransitionProvider>::State> =
         VecDeque::new();
     let mut states: u64 = 0;
     let mut transitions: u64 = 0;
@@ -114,6 +115,38 @@ fn deadlock_free_check(
     }
 }
 
+fn module_for_deadlock_check(input: &Module) -> Module {
+    if input.entry.is_some() || input.declarations.len() == 1 {
+        return input.clone();
+    }
+
+    let mut module = input.clone();
+    if let Some(entry) = select_deadlock_assert_target_expr(input) {
+        module.entry = Some(entry);
+    }
+    module
+}
+
+fn select_deadlock_assert_target_expr(module: &Module) -> Option<Spanned<ProcessExpr>> {
+    let mut decls = HashMap::<&str, &Spanned<ProcessExpr>>::new();
+    for decl in &module.declarations {
+        decls.insert(decl.name.value.as_str(), &decl.expr);
+    }
+
+    for assertion in module.assertions.iter().rev() {
+        let AssertionDecl::Property { target, kind, .. } = assertion else {
+            continue;
+        };
+        if !matches!(kind, PropertyKind::DeadlockFree) {
+            continue;
+        }
+        if let Some(expr) = decls.get(target.value.as_str()) {
+            return Some((*expr).clone());
+        }
+    }
+    None
+}
+
 fn trace_events<S>(
     visited: &HashMap<S, Option<(S, String)>>,
     mut current: S,
@@ -129,6 +162,7 @@ where
     labels.reverse();
     labels
         .into_iter()
+        .filter(|label| label != "tau")
         .map(|label| CounterexampleEvent { label })
         .collect()
 }
