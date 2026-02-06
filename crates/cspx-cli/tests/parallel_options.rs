@@ -29,6 +29,24 @@ fn deterministic_requires_seed() {
 }
 
 #[test]
+fn parallel_must_be_at_least_one() {
+    let root = repo_root();
+    cargo_bin_cmd!("cspx")
+        .current_dir(&root)
+        .args([
+            "typecheck",
+            "tests/cases/ok.cspm",
+            "--parallel",
+            "0",
+            "--format",
+            "json",
+        ])
+        .assert()
+        .code(2)
+        .stderr(contains("--parallel must be >= 1"));
+}
+
+#[test]
 fn typecheck_parallel_options_are_recorded_in_invocation() {
     let root = repo_root();
     let output = cargo_bin_cmd!("cspx")
