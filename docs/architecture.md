@@ -10,6 +10,7 @@
 - `TransitionProvider`: state から遷移を生成する。
 - `StateStore`: 状態保存（重複排除、永続化の差し替え点）。
   - M5 では `DiskStateStore` を追加（簡易な永続化）。
+  - v0.2 では `state.log` / `state.idx` / `state.lock` の 3 ファイル構成。
 - `WorkQueue`: 探索キュー（探索順の差し替え点）。
 - `Checker`: assertion/refinement の抽象化。
   - M3 では `DeadlockChecker` を最小実装として追加。

@@ -33,8 +33,29 @@
 - `StateCodec` は **決定的（deterministic）** であること（同一状態 → 同一バイト列）。
 - 仕様上、同一バイト列は同一状態とみなすため、`StateCodec` は **衝突しない完全シリアライズ**を提供することを前提とする。
 
-### v0.2+ 要件（外部インデックス化・排他・復旧）
-現行実装の制約（全スキャン、ロックなし、破損耐性なし）を踏まえ、次の要件を追加する。
+### 方式（v0.2 / 現行実装）
+`feat/phase5-disk-store-81` 以降の実装は、`path` を log パスとして次の 3 ファイルを使用する。
+
+- `path`（例: `states.log`）: append-only の状態ログ。
+- `path.with_extension("idx")`（例: `states.idx`）: 外部インデックス。
+- `path.with_extension("lock")`（例: `states.lock`）: 排他用ロックファイル。
+
+#### index フォーマット（v0.2 現行）
+- 1行目: `cspx-disk-index-v1 log_len=<n>`
+- 2行目以降: `StateCodec::encode(state)` を hex 化した 1 行 1 record。
+- `open` 時は `log_len` と実 log サイズを照合し、一致しない場合は idx を破棄して log から再構築する。
+
+#### 復旧（v0.2 現行）
+- `idx` が欠損/破損/不整合のとき、`state.log` を正として idx を再生成する。
+- `state.log` の末尾に改行なしの不完全 record がある場合は無視し、次回以降の破損伝播を防ぐため log を末尾改行境界まで truncate する。
+- 末尾以外の完全行に不正 record がある場合は `InvalidData` として `open` を失敗させる。
+
+#### 排他（v0.2 現行）
+- `open` で `state.lock` を `create_new` し、取得できない場合は `WouldBlock` で失敗させる。
+- プロセス正常終了時は lock を削除する（異常終了で lock が残る場合は手動削除が必要）。
+
+### v0.3+ 要件（高度化）
+現行 v0.2 実装（lock file 排他、hex index）を踏まえ、将来の高度化要件を以下に示す。
 
 #### ファイルレイアウト
 - `state.log`: append-only の record ログ。
