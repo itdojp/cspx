@@ -116,7 +116,7 @@ impl Checker<RefinementInput> for RefinementChecker {
             tags,
             source_spans: collect_spans(&input.spec, &input.impl_),
         };
-        let minimizer = TraceHeuristicMinimizer::default();
+        let minimizer = TraceHeuristicMinimizer;
         let counterexample = minimizer.minimize_with_oracle(counterexample, |candidate| {
             counterexample_still_fails(
                 &model,
