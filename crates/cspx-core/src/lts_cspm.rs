@@ -1,8 +1,10 @@
-use crate::ir::{ChoiceKind, EventInput, EventSeg, EventValue, Module, ProcessExpr, Spanned};
+use crate::ir::{
+    ChoiceKind, EventInput, EventSeg, EventValue, Module, ParallelKind, ProcessExpr, Spanned,
+};
 use crate::lts::{Transition, TransitionProvider};
 use crate::state_codec::{StateCodec, StateCodecError};
 use crate::types::SourceSpan;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 
 type ExprId = u32;
@@ -29,23 +31,43 @@ enum EventPat {
 enum ExprNode {
     Stop,
     Ref(ProcId),
-    Prefix { event: EventPat, next: ExprId },
-    ChoiceExternal { left: ExprId, right: ExprId },
-    ChoiceInternal { left: ExprId, right: ExprId },
+    Prefix {
+        event: EventPat,
+        next: ExprId,
+    },
+    ChoiceExternal {
+        left: ExprId,
+        right: ExprId,
+    },
+    ChoiceInternal {
+        left: ExprId,
+        right: ExprId,
+    },
+    Parallel {
+        left: ExprId,
+        right: ExprId,
+        sync: BTreeSet<String>,
+    },
 }
 
 #[derive(Debug)]
 struct Program {
     channels: BTreeMap<String, ChannelDomain>,
-    proc_roots: Vec<ExprId>,
     exprs: Vec<ExprNode>,
     resolved: Vec<ExprId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct CspmState {
-    expr: ExprId,
-    env: BTreeMap<String, u64>,
+pub enum CspmState {
+    Expr {
+        expr: ExprId,
+        env: BTreeMap<String, u64>,
+    },
+    Parallel {
+        sync: BTreeSet<String>,
+        left: Box<CspmState>,
+        right: Box<CspmState>,
+    },
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -54,12 +76,27 @@ pub struct CspmStateCodec;
 impl StateCodec<CspmState> for CspmStateCodec {
     fn encode(&self, state: &CspmState) -> Vec<u8> {
         let mut out = Vec::new();
-        out.extend_from_slice(&state.expr.to_be_bytes());
-        out.extend_from_slice(&(state.env.len() as u32).to_be_bytes());
-        for (key, value) in &state.env {
-            out.extend_from_slice(&(key.len() as u32).to_be_bytes());
-            out.extend_from_slice(key.as_bytes());
-            out.extend_from_slice(&value.to_be_bytes());
+        match state {
+            CspmState::Expr { expr, env } => {
+                out.push(1);
+                out.extend_from_slice(&expr.to_be_bytes());
+                out.extend_from_slice(&(env.len() as u32).to_be_bytes());
+                for (key, value) in env {
+                    out.extend_from_slice(&(key.len() as u32).to_be_bytes());
+                    out.extend_from_slice(key.as_bytes());
+                    out.extend_from_slice(&value.to_be_bytes());
+                }
+            }
+            CspmState::Parallel { sync, left, right } => {
+                out.push(2);
+                out.extend_from_slice(&(sync.len() as u32).to_be_bytes());
+                for channel in sync {
+                    out.extend_from_slice(&(channel.len() as u32).to_be_bytes());
+                    out.extend_from_slice(channel.as_bytes());
+                }
+                out.extend_from_slice(&self.encode(left));
+                out.extend_from_slice(&self.encode(right));
+            }
         }
         out
     }
@@ -74,39 +111,70 @@ impl StateCodec<CspmState> for CspmStateCodec {
             Ok(head)
         }
 
-        let mut input = bytes;
-        let expr = u32::from_be_bytes(
-            take(&mut input, 4)?
-                .try_into()
-                .map_err(|_| StateCodecError::new("invalid expr bytes"))?,
-        );
-        let count = u32::from_be_bytes(
-            take(&mut input, 4)?
-                .try_into()
-                .map_err(|_| StateCodecError::new("invalid env count bytes"))?,
-        ) as usize;
-
-        let mut env = BTreeMap::new();
-        for _ in 0..count {
-            let key_len = u32::from_be_bytes(
-                take(&mut input, 4)?
+        fn take_u32(bytes: &mut &[u8], err: &'static str) -> Result<u32, StateCodecError> {
+            Ok(u32::from_be_bytes(
+                take(bytes, 4)?
                     .try_into()
-                    .map_err(|_| StateCodecError::new("invalid key len bytes"))?,
-            ) as usize;
-            let key = std::str::from_utf8(take(&mut input, key_len)?)
-                .map_err(|_| StateCodecError::new("invalid utf8 in key"))?
-                .to_string();
-            let value = u64::from_be_bytes(
-                take(&mut input, 8)?
-                    .try_into()
-                    .map_err(|_| StateCodecError::new("invalid value bytes"))?,
-            );
-            env.insert(key, value);
+                    .map_err(|_| StateCodecError::new(err))?,
+            ))
         }
+
+        fn take_u64(bytes: &mut &[u8], err: &'static str) -> Result<u64, StateCodecError> {
+            Ok(u64::from_be_bytes(
+                take(bytes, 8)?
+                    .try_into()
+                    .map_err(|_| StateCodecError::new(err))?,
+            ))
+        }
+
+        fn take_string(bytes: &mut &[u8]) -> Result<String, StateCodecError> {
+            let len = take_u32(bytes, "invalid string length bytes")? as usize;
+            let s = std::str::from_utf8(take(bytes, len)?)
+                .map_err(|_| StateCodecError::new("invalid utf8 in string"))?
+                .to_string();
+            Ok(s)
+        }
+
+        fn decode_state(bytes: &mut &[u8]) -> Result<CspmState, StateCodecError> {
+            let tag = *take(bytes, 1)?
+                .first()
+                .ok_or_else(|| StateCodecError::new("unexpected EOF"))?;
+            match tag {
+                1 => {
+                    let expr = take_u32(bytes, "invalid expr bytes")?;
+                    let count = take_u32(bytes, "invalid env count bytes")? as usize;
+                    let mut env = BTreeMap::new();
+                    for _ in 0..count {
+                        let key = take_string(bytes)?;
+                        let value = take_u64(bytes, "invalid value bytes")?;
+                        env.insert(key, value);
+                    }
+                    Ok(CspmState::Expr { expr, env })
+                }
+                2 => {
+                    let count = take_u32(bytes, "invalid sync count bytes")? as usize;
+                    let mut sync = BTreeSet::new();
+                    for _ in 0..count {
+                        sync.insert(take_string(bytes)?);
+                    }
+                    let left = decode_state(bytes)?;
+                    let right = decode_state(bytes)?;
+                    Ok(CspmState::Parallel {
+                        sync,
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    })
+                }
+                _ => Err(StateCodecError::new("unknown CspmState tag")),
+            }
+        }
+
+        let mut input = bytes;
+        let state = decode_state(&mut input)?;
         if !input.is_empty() {
             return Err(StateCodecError::new("trailing bytes"));
         }
-        Ok(CspmState { expr, env })
+        Ok(state)
     }
 }
 
@@ -155,17 +223,14 @@ impl CspmTransitionProvider {
         }
 
         let program = builder.finish()?;
-        let initial = CspmState {
-            expr: program.resolved[initial_expr_id as usize],
-            env: BTreeMap::new(),
-        };
+        let initial = state_from_expr(&program, initial_expr_id, BTreeMap::new());
 
         Ok(Self { program, initial })
     }
 
     fn transitions_for(&self, state: &CspmState) -> Vec<(Transition, CspmState)> {
         let mut out = Vec::new();
-        self.transitions_for_expr(state.expr, &state.env, &mut out);
+        self.transitions_for_state_unordered(state, &mut out);
         out.sort_by(|(a_t, a_s), (b_t, b_s)| {
             let label_cmp = a_t.label.cmp(&b_t.label);
             if label_cmp != std::cmp::Ordering::Equal {
@@ -178,50 +243,142 @@ impl CspmTransitionProvider {
         out
     }
 
-    fn transitions_for_expr(
+    fn transitions_for_state_unordered(
+        &self,
+        state: &CspmState,
+        out: &mut Vec<(Transition, CspmState)>,
+    ) {
+        match state {
+            CspmState::Expr { expr, env } => self.transitions_for_expr_unordered(*expr, env, out),
+            CspmState::Parallel { sync, left, right } => {
+                self.transitions_for_parallel_unordered(sync, left, right, out)
+            }
+        }
+    }
+
+    fn transitions_for_expr_unordered(
         &self,
         expr: ExprId,
         env: &BTreeMap<String, u64>,
         out: &mut Vec<(Transition, CspmState)>,
     ) {
-        let expr = self.program.resolved[expr as usize];
         match &self.program.exprs[expr as usize] {
             ExprNode::Stop => {}
-            ExprNode::Ref(proc_id) => {
-                let target = self.program.proc_roots[*proc_id as usize];
-                let target = self.program.resolved[target as usize];
-                self.transitions_for_expr(target, env, out);
+            ExprNode::Ref(_) => {
+                let target = self.program.resolved[expr as usize];
+                let state = state_from_expr(&self.program, target, BTreeMap::new());
+                self.transitions_for_state_unordered(&state, out);
             }
             ExprNode::Prefix { event, next } => {
                 for (label, next_env) in self.eval_event(event, env) {
-                    let next_expr = self.program.resolved[*next as usize];
                     out.push((
                         Transition { label },
-                        CspmState {
-                            expr: next_expr,
-                            env: next_env,
-                        },
+                        state_from_expr(&self.program, *next, next_env),
                     ));
                 }
             }
             ExprNode::ChoiceExternal { left, right } => {
-                self.transitions_for_expr(*left, env, out);
-                self.transitions_for_expr(*right, env, out);
+                let left_state = state_from_expr(&self.program, *left, env.clone());
+                self.transitions_for_state_unordered(&left_state, out);
+                let right_state = state_from_expr(&self.program, *right, env.clone());
+                self.transitions_for_state_unordered(&right_state, out);
             }
             ExprNode::ChoiceInternal { left, right } => {
                 for target in [*left, *right] {
-                    let target = self.program.resolved[target as usize];
                     out.push((
                         Transition {
                             label: "tau".to_string(),
                         },
-                        CspmState {
-                            expr: target,
-                            env: env.clone(),
-                        },
+                        state_from_expr(&self.program, target, env.clone()),
                     ));
                 }
             }
+            ExprNode::Parallel { left, right, sync } => {
+                let state = CspmState::Parallel {
+                    sync: sync.clone(),
+                    left: Box::new(state_from_expr(&self.program, *left, env.clone())),
+                    right: Box::new(state_from_expr(&self.program, *right, env.clone())),
+                };
+                self.transitions_for_state_unordered(&state, out);
+            }
+        }
+    }
+
+    fn transitions_for_parallel_unordered(
+        &self,
+        sync: &BTreeSet<String>,
+        left: &CspmState,
+        right: &CspmState,
+        out: &mut Vec<(Transition, CspmState)>,
+    ) {
+        fn label_channel(label: &str) -> &str {
+            label.split_once('.').map(|(ch, _)| ch).unwrap_or(label)
+        }
+
+        fn is_sync_event(sync: &BTreeSet<String>, label: &str) -> bool {
+            if label == "tau" {
+                return false;
+            }
+            sync.contains(label_channel(label))
+        }
+
+        let mut left_next = Vec::new();
+        self.transitions_for_state_unordered(left, &mut left_next);
+        let mut right_next = Vec::new();
+        self.transitions_for_state_unordered(right, &mut right_next);
+
+        let mut right_sync = HashMap::<String, Vec<CspmState>>::new();
+        let mut right_nonsync = Vec::new();
+        for (transition, next_state) in right_next {
+            if is_sync_event(sync, &transition.label) {
+                right_sync
+                    .entry(transition.label)
+                    .or_default()
+                    .push(next_state);
+            } else {
+                right_nonsync.push((transition, next_state));
+            }
+        }
+
+        for (transition, next_left) in left_next {
+            if is_sync_event(sync, &transition.label) {
+                let Some(next_right_states) = right_sync.get(&transition.label) else {
+                    continue;
+                };
+                for next_right in next_right_states {
+                    out.push((
+                        Transition {
+                            label: transition.label.clone(),
+                        },
+                        CspmState::Parallel {
+                            sync: sync.clone(),
+                            left: Box::new(next_left.clone()),
+                            right: Box::new(next_right.clone()),
+                        },
+                    ));
+                }
+                continue;
+            }
+
+            out.push((
+                transition,
+                CspmState::Parallel {
+                    sync: sync.clone(),
+                    left: Box::new(next_left),
+                    right: Box::new(right.clone()),
+                },
+            ));
+        }
+
+        for (transition, next_right) in right_nonsync {
+            out.push((
+                transition,
+                CspmState::Parallel {
+                    sync: sync.clone(),
+                    left: Box::new(left.clone()),
+                    right: Box::new(next_right),
+                },
+            ));
         }
     }
 
@@ -271,6 +428,21 @@ impl TransitionProvider for CspmTransitionProvider {
 
     fn transitions(&self, state: &Self::State) -> Vec<(Self::Transition, Self::State)> {
         self.transitions_for(state)
+    }
+}
+
+fn state_from_expr(program: &Program, expr: ExprId, env: BTreeMap<String, u64>) -> CspmState {
+    match &program.exprs[expr as usize] {
+        ExprNode::Ref(_) => {
+            let target = program.resolved[expr as usize];
+            state_from_expr(program, target, BTreeMap::new())
+        }
+        ExprNode::Parallel { left, right, sync } => CspmState::Parallel {
+            sync: sync.clone(),
+            left: Box::new(state_from_expr(program, *left, env.clone())),
+            right: Box::new(state_from_expr(program, *right, env.clone())),
+        },
+        _ => CspmState::Expr { expr, env },
     }
 }
 
@@ -376,7 +548,6 @@ impl<'a> ProgramBuilder<'a> {
         let resolved = compute_resolved(&self.exprs, &self.proc_roots, &self.expr_spans)?;
         Ok(Program {
             channels: self.channels,
-            proc_roots: self.proc_roots,
             exprs: self.exprs,
             resolved,
         })
@@ -423,10 +594,40 @@ impl<'a> ProgramBuilder<'a> {
                 };
                 Ok(self.intern(node, Some(expr.span.clone())))
             }
-            ProcessExpr::Parallel { .. } => Err(CspmLtsError {
-                message: "parallel composition is not supported yet".to_string(),
-                span: Some(expr.span.clone()),
-            }),
+            ProcessExpr::Parallel {
+                kind,
+                left,
+                right,
+                sync,
+            } => {
+                let left = self.compile_expr(left)?;
+                let right = self.compile_expr(right)?;
+
+                let mut sync_channels = BTreeSet::new();
+                match kind {
+                    ParallelKind::Interleaving => {}
+                    ParallelKind::Interface => {
+                        let Some(set) = sync else {
+                            return Err(CspmLtsError {
+                                message: "missing sync set for interface parallel".to_string(),
+                                span: Some(expr.span.clone()),
+                            });
+                        };
+                        for channel in &set.channels {
+                            sync_channels.insert(channel.value.clone());
+                        }
+                    }
+                }
+
+                Ok(self.intern(
+                    ExprNode::Parallel {
+                        left,
+                        right,
+                        sync: sync_channels,
+                    },
+                    Some(expr.span.clone()),
+                ))
+            }
             ProcessExpr::Hide { .. } => Err(CspmLtsError {
                 message: "hiding is not supported yet".to_string(),
                 span: Some(expr.span.clone()),
