@@ -1,0 +1,6 @@
+id: P220
+title: FD refinement fail (impl diverges)
+suite: fast
+tags: [refinement, failures, divergences, fast]
+run:
+  cmd: ["cspx", "refine", "--model", "FD", "spec.cspm", "impl.cspm", "--format", "json"]

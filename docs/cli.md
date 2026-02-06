@@ -44,7 +44,12 @@
 - traces の包含に加え、各 trace 到達後に impl が到達可能な stable state の refusal（拒否可能集合）が spec でも可能であることを検査する。
   - v0.1 では反例を `tags` にエンコードする（例: `refusal_mismatch`, `refuse:<event>`）。
 
-`--model FD` は未実装（現状は `unsupported` + `reason.kind=not_implemented`）。
+`cspx refine --model FD <spec> <impl>` は failures-divergences refinement（FD）を検査する。
+
+- divergence は「到達可能な `tau`-cycle（`tau` 遷移のみで閉じる cycle）」とする。
+- impl が divergence 可能な trace は spec でも divergence 可能であることを検査する。
+- spec が divergence 可能な trace 以降は chaos とみなし、後続の trace/refusal の検査を打ち切る（v0.1）。
+- divergence mismatch の反例は trace の末尾に `tau` を 1 つ付与し、`tags` に `divergence_mismatch` を付与する。
 
 ## トップレベル status/exit_code の集約（v0.1）
 `checks` が複数ある場合、トップレベルの `status`/`exit_code` は以下の優先順位で集約する。
