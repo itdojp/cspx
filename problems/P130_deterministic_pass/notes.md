@@ -1,1 +1,1 @@
-deterministic assertion は未実装。現状は unsupported/error を期待。
+τ-closure 上で同一可視ラベルが分岐しないため `pass` を期待。
