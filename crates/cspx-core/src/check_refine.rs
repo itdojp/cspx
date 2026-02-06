@@ -5,7 +5,7 @@ use crate::ir::Module;
 use crate::lts::TransitionProvider;
 use crate::lts_cspm::{CspmStateCodec, CspmTransitionProvider};
 use crate::minimize::Minimizer;
-use crate::minimize_simple::IdentityMinimizer;
+use crate::minimize_simple::TraceHeuristicMinimizer;
 use crate::state_codec::StateCodec;
 use crate::types::{
     Counterexample, CounterexampleEvent, CounterexampleType, Reason, ReasonKind, SourceSpan, Stats,
@@ -107,6 +107,7 @@ impl Checker<RefinementInput> for RefinementChecker {
             format!("model:{}", model.as_str()),
         ];
         tags.extend(failure.tags);
+        let required_tags = tags.clone();
 
         let counterexample = Counterexample {
             kind: CounterexampleType::Trace,
@@ -115,8 +116,16 @@ impl Checker<RefinementInput> for RefinementChecker {
             tags,
             source_spans: collect_spans(&input.spec, &input.impl_),
         };
-        let minimizer = IdentityMinimizer;
-        let counterexample = minimizer.minimize(counterexample);
+        let minimizer = TraceHeuristicMinimizer;
+        let counterexample = minimizer.minimize_with_oracle(counterexample, |candidate| {
+            counterexample_still_fails(
+                &model,
+                &spec_provider,
+                &impl_provider,
+                candidate,
+                &required_tags,
+            )
+        });
         let explainer = BasicExplainer;
         let counterexample = explainer.explain(counterexample);
 
@@ -484,6 +493,109 @@ fn failures_divergences_includes(
 
         NodeAction::Continue
     })
+}
+
+#[derive(Clone, Debug)]
+struct ReplayOutcome {
+    impl_closure: Closure,
+    spec_closure: Closure,
+    trace_mismatch: bool,
+}
+
+fn replay_trace(
+    spec: &CspmTransitionProvider,
+    impl_: &CspmTransitionProvider,
+    trace: &[String],
+) -> Option<ReplayOutcome> {
+    let mut impl_closure = tau_closure(impl_, vec![impl_.initial_state()]);
+    let mut spec_closure = tau_closure(spec, vec![spec.initial_state()]);
+    let mut trace_mismatch = false;
+
+    for label in trace {
+        let impl_next = next_by_label(impl_, &impl_closure.states, label);
+        if impl_next.states.is_empty() {
+            return None;
+        }
+        if !trace_mismatch {
+            let spec_next = next_by_label(spec, &spec_closure.states, label);
+            if spec_next.states.is_empty() {
+                trace_mismatch = true;
+            }
+            spec_closure = spec_next;
+        }
+        impl_closure = impl_next;
+    }
+
+    Some(ReplayOutcome {
+        impl_closure,
+        spec_closure,
+        trace_mismatch,
+    })
+}
+
+fn has_refusal_mismatch(
+    spec: &CspmTransitionProvider,
+    impl_: &CspmTransitionProvider,
+    replay: &ReplayOutcome,
+) -> bool {
+    let spec_stable_offers = stable_offer_sets(spec, &replay.spec_closure.states);
+    for impl_state in &replay.impl_closure.states {
+        if !is_stable(impl_, impl_state) {
+            continue;
+        }
+        let impl_offer = offered_visible_labels(impl_, impl_state);
+        let ok = spec_stable_offers
+            .iter()
+            .any(|spec_offer| spec_offer.is_subset(&impl_offer));
+        if !ok {
+            return true;
+        }
+    }
+    false
+}
+
+fn counterexample_still_fails(
+    model: &RefinementModel,
+    spec: &CspmTransitionProvider,
+    impl_: &CspmTransitionProvider,
+    counterexample: &Counterexample,
+    required_tags: &[String],
+) -> bool {
+    if counterexample.kind != CounterexampleType::Trace {
+        return false;
+    }
+    let trace = counterexample
+        .events
+        .iter()
+        .map(|event| event.label.clone())
+        .collect::<Vec<_>>();
+    if required_tags.iter().any(|tag| tag == "divergence_mismatch")
+        && !trace.iter().any(|label| label == TAU)
+    {
+        return false;
+    }
+    let Some(replay) = replay_trace(spec, impl_, &trace) else {
+        return false;
+    };
+    if replay.trace_mismatch {
+        return true;
+    }
+
+    match model {
+        RefinementModel::T => false,
+        RefinementModel::F => has_refusal_mismatch(spec, impl_, &replay),
+        RefinementModel::FD => {
+            let spec_diverges = closure_has_tau_cycle(spec, &replay.spec_closure.states);
+            let impl_diverges = closure_has_tau_cycle(impl_, &replay.impl_closure.states);
+            if impl_diverges && !spec_diverges {
+                return true;
+            }
+            if spec_diverges {
+                return false;
+            }
+            has_refusal_mismatch(spec, impl_, &replay)
+        }
+    }
 }
 
 fn refusal_mismatch_tags(

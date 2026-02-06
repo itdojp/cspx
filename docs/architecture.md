@@ -38,5 +38,13 @@ flowchart LR
 - 依存は最小化し、差し替え可能なインタフェースを優先する。
 - 反例/説明可能性は `Counterexample` / `SourceSpan` を中心に統一する。
 
+## Minimizer 契約（Phase 5 / v0.1）
+- 入力: checker が返した fail 時の `Counterexample`。
+- 出力: `Counterexample` の形状（`type/tags/source_spans`）は保持し、`events` のみ短縮対象とする。
+- 不変条件: 最小化後も「fail を再現できること」を oracle（`preserves_failure`）で検証する。
+- アルゴリズム: v0.1 は **single-event deletion の貪欲法**（局所最小）。
+- `is_minimized`: oracle 検証のうえ「これ以上 1 イベント削除しても fail を維持できない」場合のみ `true`。
+  - これは局所最小を意味し、グローバル最短（最小長）を保証しない。
+
 ## スケール設計
 - DiskStateStore / explore_parallel の仕様は `docs/scale.md` を参照。
