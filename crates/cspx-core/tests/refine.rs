@@ -47,6 +47,32 @@ fn prefix(
     )
 }
 
+fn ref_proc(name: &str, path: &str) -> cspx_core::ir::Spanned<cspx_core::ir::ProcessExpr> {
+    spanned(
+        cspx_core::ir::ProcessExpr::Ref(spanned(name.to_string(), path)),
+        path,
+    )
+}
+
+fn hide(
+    inner: cspx_core::ir::Spanned<cspx_core::ir::ProcessExpr>,
+    channels: &[&str],
+    path: &str,
+) -> cspx_core::ir::Spanned<cspx_core::ir::ProcessExpr> {
+    spanned(
+        cspx_core::ir::ProcessExpr::Hide {
+            inner: Box::new(inner),
+            hide: cspx_core::ir::EventSet {
+                channels: channels
+                    .iter()
+                    .map(|&ch| spanned(ch.to_string(), path))
+                    .collect(),
+            },
+        },
+        path,
+    )
+}
+
 fn choice(
     kind: cspx_core::ir::ChoiceKind,
     left: cspx_core::ir::Spanned<cspx_core::ir::ProcessExpr>,
@@ -297,4 +323,163 @@ fn traces_refinement_handles_tau_closure() {
     let counterexample = result.counterexample.expect("counterexample");
     assert_eq!(counterexample.events.len(), 1);
     assert_eq!(counterexample.events[0].label, "b");
+}
+
+#[test]
+fn failures_refinement_passes_on_identical_offers() {
+    let spec_path = "spec.cspm";
+    let impl_path = "impl.cspm";
+
+    let spec_expr = choice(
+        cspx_core::ir::ChoiceKind::External,
+        prefix("a", stop(spec_path), spec_path),
+        prefix("b", stop(spec_path), spec_path),
+        spec_path,
+    );
+    let impl_expr = choice(
+        cspx_core::ir::ChoiceKind::External,
+        prefix("a", stop(impl_path), impl_path),
+        prefix("b", stop(impl_path), impl_path),
+        impl_path,
+    );
+
+    let spec = single_process_module(
+        "SPEC",
+        spec_expr,
+        vec![unit_channel("a", spec_path), unit_channel("b", spec_path)],
+        spec_path,
+    );
+    let impl_ = single_process_module(
+        "IMPL",
+        impl_expr,
+        vec![unit_channel("a", impl_path), unit_channel("b", impl_path)],
+        impl_path,
+    );
+
+    let checker = RefinementChecker;
+    let request = CheckRequest {
+        command: CheckCommand::Refine,
+        model: Some(RefinementModel::F),
+        target: Some("spec impl".to_string()),
+    };
+    let input = RefinementInput { spec, impl_ };
+    let result = checker.check(&request, &input);
+
+    assert_eq!(result.status, cspx_core::types::Status::Pass);
+    assert!(result.counterexample.is_none());
+}
+
+#[test]
+fn failures_refinement_fails_on_refusal_mismatch() {
+    let spec_path = "spec.cspm";
+    let impl_path = "impl.cspm";
+
+    let spec_expr = choice(
+        cspx_core::ir::ChoiceKind::External,
+        prefix("a", stop(spec_path), spec_path),
+        prefix("b", stop(spec_path), spec_path),
+        spec_path,
+    );
+    let impl_expr = prefix("a", stop(impl_path), impl_path);
+
+    let spec = single_process_module(
+        "SPEC",
+        spec_expr,
+        vec![unit_channel("a", spec_path), unit_channel("b", spec_path)],
+        spec_path,
+    );
+    let impl_ = single_process_module(
+        "IMPL",
+        impl_expr,
+        vec![unit_channel("a", impl_path), unit_channel("b", impl_path)],
+        impl_path,
+    );
+
+    let checker = RefinementChecker;
+    let request = CheckRequest {
+        command: CheckCommand::Refine,
+        model: Some(RefinementModel::F),
+        target: Some("spec impl".to_string()),
+    };
+    let input = RefinementInput { spec, impl_ };
+    let result = checker.check(&request, &input);
+
+    assert_eq!(result.status, cspx_core::types::Status::Fail);
+    let counterexample = result.counterexample.expect("counterexample");
+    assert_eq!(counterexample.events.len(), 0);
+    assert!(counterexample.tags.iter().any(|t| t == "refusal_mismatch"));
+    assert!(counterexample.tags.iter().any(|t| t == "refuse:b"));
+}
+
+#[test]
+fn failures_divergences_refinement_passes_on_stop() {
+    let spec_path = "spec.cspm";
+    let impl_path = "impl.cspm";
+
+    let spec = single_process_module(
+        "SPEC",
+        stop(spec_path),
+        vec![unit_channel("a", spec_path)],
+        spec_path,
+    );
+    let impl_ = single_process_module(
+        "IMPL",
+        stop(impl_path),
+        vec![unit_channel("a", impl_path)],
+        impl_path,
+    );
+
+    let checker = RefinementChecker;
+    let request = CheckRequest {
+        command: CheckCommand::Refine,
+        model: Some(RefinementModel::FD),
+        target: Some("spec impl".to_string()),
+    };
+    let input = RefinementInput { spec, impl_ };
+    let result = checker.check(&request, &input);
+
+    assert_eq!(result.status, cspx_core::types::Status::Pass);
+    assert!(result.counterexample.is_none());
+}
+
+#[test]
+fn failures_divergences_refinement_fails_on_impl_divergence() {
+    let spec_path = "spec.cspm";
+    let impl_path = "impl.cspm";
+
+    let spec = single_process_module(
+        "SPEC",
+        stop(spec_path),
+        vec![unit_channel("a", spec_path)],
+        spec_path,
+    );
+    let impl_expr = hide(
+        prefix("a", ref_proc("IMPL", impl_path), impl_path),
+        &["a"],
+        impl_path,
+    );
+    let impl_ = single_process_module(
+        "IMPL",
+        impl_expr,
+        vec![unit_channel("a", impl_path)],
+        impl_path,
+    );
+
+    let checker = RefinementChecker;
+    let request = CheckRequest {
+        command: CheckCommand::Refine,
+        model: Some(RefinementModel::FD),
+        target: Some("spec impl".to_string()),
+    };
+    let input = RefinementInput { spec, impl_ };
+    let result = checker.check(&request, &input);
+
+    assert_eq!(result.status, cspx_core::types::Status::Fail);
+    let counterexample = result.counterexample.expect("counterexample");
+    assert!(counterexample.events.iter().any(|e| e.label == "tau"));
+    assert!(counterexample
+        .tags
+        .iter()
+        .any(|t| t == "divergence_mismatch"));
+    assert!(counterexample.tags.iter().any(|t| t == "divergence"));
 }

@@ -1,7 +1,7 @@
 exit_code:
-  eq: 3
+  eq: 1
 status:
-  eq: "unsupported"
+  eq: "fail"
 checks:
   - name:
       eq: "refine"
@@ -10,10 +10,9 @@ checks:
     target:
       eq: "SPEC [T= IMPL"
     status:
-      eq: "unsupported"
-    reason:
-      kind:
-        eq: "not_implemented"
+      eq: "pass"
+    counterexample:
+      present: false
   - name:
       eq: "refine"
     model:
@@ -21,7 +20,10 @@ checks:
     target:
       eq: "SPEC [F= IMPL"
     status:
-      eq: "unsupported"
-    reason:
-      kind:
-        eq: "not_implemented"
+      eq: "fail"
+    counterexample:
+      present: true
+      trace_len:
+        eq: 0
+      tags:
+        contains: ["refinement", "model:F", "refusal_mismatch", "refuse:b"]

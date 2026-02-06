@@ -6,12 +6,12 @@ checks:
   - name:
       eq: "refine"
     model:
-      eq: "F"
+      eq: "FD"
     status:
       eq: "fail"
     counterexample:
       present: true
       trace_len:
-        eq: 0
+        eq: 1
       tags:
-        contains: ["refinement", "model:F", "refusal_mismatch", "refuse:b"]
+        contains: ["refinement", "model:FD", "divergence_mismatch", "divergence"]

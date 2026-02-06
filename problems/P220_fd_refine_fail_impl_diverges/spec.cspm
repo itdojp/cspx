@@ -1,0 +1,3 @@
+-- P220: FD refinement fail (impl diverges)
+channel a
+SPEC = STOP
