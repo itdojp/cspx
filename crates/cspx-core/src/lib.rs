@@ -1,6 +1,7 @@
 mod assertion_select;
 pub mod check;
 pub mod check_deadlock;
+pub mod check_determinism;
 pub mod check_divergence;
 pub mod check_refine;
 pub mod disk_store;
@@ -24,6 +25,7 @@ pub mod types;
 
 pub use check::{CheckRequest, CheckResult, Checker, RefinementModel};
 pub use check_deadlock::DeadlockChecker;
+pub use check_determinism::DeterminismChecker;
 pub use check_divergence::DivergenceChecker;
 pub use check_refine::{RefinementChecker, RefinementInput};
 pub use disk_store::DiskStateStore;

@@ -2,9 +2,10 @@ use anyhow::{anyhow, Context, Result};
 use chrono::{SecondsFormat, Utc};
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use cspx_core::{
-    explore, CheckRequest, CheckResult, Checker, DeadlockChecker, DivergenceChecker, Frontend,
-    FrontendErrorKind, InMemoryStateStore, Reason, ReasonKind, RefinementChecker, RefinementInput,
-    SimpleFrontend, SimpleTransitionProvider, Stats, Status, VecWorkQueue,
+    explore, CheckRequest, CheckResult, Checker, DeadlockChecker, DeterminismChecker,
+    DivergenceChecker, Frontend, FrontendErrorKind, InMemoryStateStore, Reason, ReasonKind,
+    RefinementChecker, RefinementInput, SimpleFrontend, SimpleTransitionProvider, Stats, Status,
+    VecWorkQueue,
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -479,6 +480,15 @@ fn run_check_by_assertion(file: &Path, io_error: Option<&String>, assertion: &st
             };
             checker.check(&request, &module)
         }
+        "deterministic" => {
+            let checker = DeterminismChecker;
+            let request = CheckRequest {
+                command: cspx_core::check::CheckCommand::Check,
+                model: None,
+                target: Some(assertion.to_string()),
+            };
+            checker.check(&request, &module)
+        }
         _ => build_stub_check_result(
             "check",
             None,
@@ -526,13 +536,9 @@ fn run_all_assertions(file: &Path, io_error: Option<&String>) -> Vec<CheckResult
                     cspx_core::ir::PropertyKind::DivergenceFree => out.push(
                         run_divergence_property_assertion(&module, &target.value, check_target),
                     ),
-                    _ => out.push(build_stub_check_result(
-                        "check",
-                        None,
-                        Some(check_target),
-                        None,
-                        "assertion not implemented yet",
-                    )),
+                    cspx_core::ir::PropertyKind::Deterministic => out.push(
+                        run_determinism_property_assertion(&module, &target.value, check_target),
+                    ),
                 }
             }
             cspx_core::ir::AssertionDecl::Refinement { spec, model, impl_ } => {
@@ -607,6 +613,38 @@ fn run_divergence_property_assertion(
     check_module.entry = Some(expr);
 
     let checker = DivergenceChecker;
+    let request = CheckRequest {
+        command: cspx_core::check::CheckCommand::Check,
+        model: None,
+        target: Some(target_desc),
+    };
+    checker.check(&request, &check_module)
+}
+
+fn run_determinism_property_assertion(
+    module: &cspx_core::ir::Module,
+    target_proc: &str,
+    target_desc: String,
+) -> CheckResult {
+    let Some(expr) = module
+        .declarations
+        .iter()
+        .find(|decl| decl.name.value == target_proc)
+        .map(|decl| decl.expr.clone())
+    else {
+        return error_check(
+            "check",
+            None,
+            Some(target_desc),
+            ReasonKind::InvalidInput,
+            format!("undefined process: {target_proc}"),
+        );
+    };
+
+    let mut check_module = module.clone();
+    check_module.entry = Some(expr);
+
+    let checker = DeterminismChecker;
     let request = CheckRequest {
         command: cspx_core::check::CheckCommand::Check,
         model: None,
