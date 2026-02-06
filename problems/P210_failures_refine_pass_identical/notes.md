@@ -1,1 +1,1 @@
-failures refinement の pass ケース。現状は unsupported/error を期待。
+failures refinement（F）の pass ケース。spec/impl が同一のため `pass` を期待。

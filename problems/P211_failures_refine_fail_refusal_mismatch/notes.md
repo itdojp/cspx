@@ -1,1 +1,2 @@
-refusal mismatch を反例で示す予定。現状は unsupported/error を期待。
+failures refinement（F）の fail ケース。impl は `b` を拒否できるが spec は拒否できないため `fail` を期待。
+反例は空 trace + `refusal_mismatch` / `refuse:b` タグで表現する。

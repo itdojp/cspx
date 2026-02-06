@@ -13,6 +13,10 @@ use crate::types::{
 };
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
+const TAU: &str = "tau";
+
+type State = <CspmTransitionProvider as TransitionProvider>::State;
+
 #[derive(Debug, Default)]
 pub struct RefinementChecker;
 
@@ -23,10 +27,16 @@ pub struct RefinementInput {
 }
 
 #[derive(Clone, Debug)]
-struct TraceInclusionOutcome {
+struct RefinementOutcome {
     pub refines: bool,
-    pub counterexample: Option<Vec<String>>,
+    pub failure: Option<RefinementFailure>,
     pub stats: Stats,
+}
+
+#[derive(Clone, Debug)]
+struct RefinementFailure {
+    pub trace: Vec<String>,
+    pub tags: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -35,12 +45,15 @@ struct NodeKey {
     spec_sig: Vec<Vec<u8>>,
 }
 
+#[derive(Clone, Debug)]
+struct Closure {
+    states: Vec<State>,
+    sig: Vec<Vec<u8>>,
+}
+
 impl Checker<RefinementInput> for RefinementChecker {
     fn check(&self, request: &CheckRequest, input: &RefinementInput) -> CheckResult {
         let model = request.model.clone().unwrap_or(RefinementModel::T);
-        if model != RefinementModel::T {
-            return not_implemented_result(request, model);
-        }
 
         let spec_provider = match CspmTransitionProvider::from_module(&input.spec) {
             Ok(provider) => provider,
@@ -55,7 +68,11 @@ impl Checker<RefinementInput> for RefinementChecker {
             }
         };
 
-        let outcome = trace_includes(&spec_provider, &impl_provider);
+        let outcome = match model {
+            RefinementModel::T => trace_includes(&spec_provider, &impl_provider),
+            RefinementModel::F => failures_includes(&spec_provider, &impl_provider),
+            RefinementModel::FD => return not_implemented_result(request, model),
+        };
 
         if outcome.refines {
             return CheckResult {
@@ -69,20 +86,27 @@ impl Checker<RefinementInput> for RefinementChecker {
             };
         }
 
-        let events = outcome
-            .counterexample
-            .unwrap_or_default()
+        let failure = outcome.failure.unwrap_or(RefinementFailure {
+            trace: Vec::new(),
+            tags: Vec::new(),
+        });
+        let events = failure
+            .trace
             .into_iter()
             .map(|label| CounterexampleEvent { label })
             .collect::<Vec<_>>();
+
+        let mut tags = vec![
+            "refinement".to_string(),
+            format!("model:{}", model.as_str()),
+        ];
+        tags.extend(failure.tags);
+
         let counterexample = Counterexample {
             kind: CounterexampleType::Trace,
             events,
             is_minimized: false,
-            tags: vec![
-                "refinement".to_string(),
-                format!("model:{}", model.as_str()),
-            ],
+            tags,
             source_spans: collect_spans(&input.spec, &input.impl_),
         };
         let minimizer = IdentityMinimizer;
@@ -145,131 +169,179 @@ fn not_implemented_result(request: &CheckRequest, model: RefinementModel) -> Che
     }
 }
 
-fn trace_includes(
-    spec: &CspmTransitionProvider,
-    impl_: &CspmTransitionProvider,
-) -> TraceInclusionOutcome {
-    type State = <CspmTransitionProvider as TransitionProvider>::State;
-
-    const TAU: &str = "tau";
+fn tau_closure(provider: &CspmTransitionProvider, seeds: Vec<State>) -> Closure {
     let codec = CspmStateCodec;
 
-    fn tau_closure(
-        provider: &CspmTransitionProvider,
-        codec: &CspmStateCodec,
-        seeds: Vec<State>,
-    ) -> (Vec<State>, Vec<Vec<u8>>) {
-        let mut visited = HashSet::<State>::new();
-        let mut queue = VecDeque::<State>::new();
-        for seed in seeds {
-            if visited.insert(seed.clone()) {
-                queue.push_back(seed);
-            }
+    let mut visited = HashSet::<State>::new();
+    let mut queue = VecDeque::<State>::new();
+    for seed in seeds {
+        if visited.insert(seed.clone()) {
+            queue.push_back(seed);
         }
-
-        while let Some(state) = queue.pop_front() {
-            for (transition, next_state) in provider.transitions(&state) {
-                if transition.label != TAU {
-                    continue;
-                }
-                if visited.insert(next_state.clone()) {
-                    queue.push_back(next_state);
-                }
-            }
-        }
-
-        let mut pairs = visited
-            .into_iter()
-            .map(|state| (codec.encode(&state), state))
-            .collect::<Vec<_>>();
-        pairs.sort_by(|(a_bytes, _), (b_bytes, _)| a_bytes.cmp(b_bytes));
-        let sig = pairs
-            .iter()
-            .map(|(bytes, _state)| bytes.clone())
-            .collect::<Vec<_>>();
-        let states = pairs.into_iter().map(|(_bytes, state)| state).collect();
-        (states, sig)
     }
 
-    fn enabled_visible_labels(
-        provider: &CspmTransitionProvider,
-        states: &[State],
-    ) -> BTreeSet<String> {
-        let mut labels = BTreeSet::new();
-        for state in states {
-            for (transition, _next) in provider.transitions(state) {
-                if transition.label == TAU {
-                    continue;
-                }
-                labels.insert(transition.label);
+    while let Some(state) = queue.pop_front() {
+        for (transition, next_state) in provider.transitions(&state) {
+            if transition.label != TAU {
+                continue;
+            }
+            if visited.insert(next_state.clone()) {
+                queue.push_back(next_state);
             }
         }
-        labels
     }
 
-    fn next_by_label(
-        provider: &CspmTransitionProvider,
-        codec: &CspmStateCodec,
-        from_closure: &[State],
-        label: &str,
-    ) -> (Vec<State>, Vec<Vec<u8>>) {
-        let mut seeds = Vec::new();
-        for state in from_closure {
-            for (transition, next_state) in provider.transitions(state) {
-                if transition.label == label {
-                    seeds.push(next_state);
-                }
+    let mut pairs = visited
+        .into_iter()
+        .map(|state| (codec.encode(&state), state))
+        .collect::<Vec<_>>();
+    pairs.sort_by(|(a_bytes, _), (b_bytes, _)| a_bytes.cmp(b_bytes));
+
+    Closure {
+        sig: pairs.iter().map(|(bytes, _)| bytes.clone()).collect(),
+        states: pairs.into_iter().map(|(_bytes, state)| state).collect(),
+    }
+}
+
+fn enabled_visible_labels(provider: &CspmTransitionProvider, states: &[State]) -> BTreeSet<String> {
+    let mut labels = BTreeSet::new();
+    for state in states {
+        for (transition, _next) in provider.transitions(state) {
+            if transition.label == TAU {
+                continue;
+            }
+            labels.insert(transition.label);
+        }
+    }
+    labels
+}
+
+fn next_by_label(
+    provider: &CspmTransitionProvider,
+    from_closure: &[State],
+    label: &str,
+) -> Closure {
+    let mut seeds = Vec::new();
+    for state in from_closure {
+        for (transition, next_state) in provider.transitions(state) {
+            if transition.label == label {
+                seeds.push(next_state);
             }
         }
-        tau_closure(provider, codec, seeds)
     }
+    tau_closure(provider, seeds)
+}
 
-    fn reconstruct_trace(
-        predecessor: &HashMap<NodeKey, (NodeKey, String)>,
-        to: &NodeKey,
-    ) -> Vec<String> {
-        let mut out = Vec::new();
-        let mut cur = to.clone();
-        while let Some((prev, label)) = predecessor.get(&cur) {
-            out.push(label.clone());
-            cur = prev.clone();
+fn reconstruct_trace(
+    predecessor: &HashMap<NodeKey, (NodeKey, String)>,
+    to: &NodeKey,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = to.clone();
+    while let Some((prev, label)) = predecessor.get(&cur) {
+        out.push(label.clone());
+        cur = prev.clone();
+    }
+    out.reverse();
+    out
+}
+
+fn is_stable(provider: &CspmTransitionProvider, state: &State) -> bool {
+    provider
+        .transitions(state)
+        .into_iter()
+        .all(|(transition, _)| transition.label != TAU)
+}
+
+fn offered_visible_labels(provider: &CspmTransitionProvider, state: &State) -> BTreeSet<String> {
+    provider
+        .transitions(state)
+        .into_iter()
+        .filter_map(|(transition, _next)| {
+            if transition.label == TAU {
+                return None;
+            }
+            Some(transition.label)
+        })
+        .collect()
+}
+
+fn stable_offer_sets(
+    provider: &CspmTransitionProvider,
+    closure_states: &[State],
+) -> Vec<BTreeSet<String>> {
+    let mut out = Vec::new();
+    for state in closure_states {
+        if !is_stable(provider, state) {
+            continue;
         }
-        out.reverse();
-        out
+        out.push(offered_visible_labels(provider, state));
     }
+    out
+}
 
-    let (impl0_states, impl0_sig) = tau_closure(impl_, &codec, vec![impl_.initial_state()]);
-    let (spec0_states, spec0_sig) = tau_closure(spec, &codec, vec![spec.initial_state()]);
+fn bfs_refinement<F>(
+    spec: &CspmTransitionProvider,
+    impl_: &CspmTransitionProvider,
+    mut node_check: F,
+) -> RefinementOutcome
+where
+    F: FnMut(
+        &NodeKey,
+        &[State],
+        &[State],
+        &HashMap<NodeKey, (NodeKey, String)>,
+    ) -> Option<RefinementFailure>,
+{
+    let impl0 = tau_closure(impl_, vec![impl_.initial_state()]);
+    let spec0 = tau_closure(spec, vec![spec.initial_state()]);
 
     let initial_key = NodeKey {
-        impl_sig: impl0_sig,
-        spec_sig: spec0_sig,
+        impl_sig: impl0.sig.clone(),
+        spec_sig: spec0.sig.clone(),
     };
     let mut visited = HashSet::<NodeKey>::new();
     visited.insert(initial_key.clone());
 
     let mut predecessor = HashMap::<NodeKey, (NodeKey, String)>::new();
-    let mut queue = VecDeque::<(NodeKey, Vec<State>, Vec<State>)>::new();
-    queue.push_back((initial_key.clone(), impl0_states, spec0_states));
+    let mut queue = VecDeque::<(NodeKey, Closure, Closure)>::new();
+    queue.push_back((initial_key.clone(), impl0, spec0));
 
     let mut states_count: u64 = 1;
     let mut transitions_count: u64 = 0;
 
-    while let Some((node_key, impl_states, spec_states)) = queue.pop_front() {
-        let labels = enabled_visible_labels(impl_, &impl_states);
+    while let Some((node_key, impl_closure, spec_closure)) = queue.pop_front() {
+        if let Some(failure) = node_check(
+            &node_key,
+            &impl_closure.states,
+            &spec_closure.states,
+            &predecessor,
+        ) {
+            return RefinementOutcome {
+                refines: false,
+                failure: Some(failure),
+                stats: Stats {
+                    states: Some(states_count),
+                    transitions: Some(transitions_count),
+                },
+            };
+        }
+
+        let labels = enabled_visible_labels(impl_, &impl_closure.states);
         for label in labels {
             transitions_count += 1;
 
-            let (impl_next_states, impl_next_sig) =
-                next_by_label(impl_, &codec, &impl_states, &label);
-            let (spec_next_states, spec_next_sig) =
-                next_by_label(spec, &codec, &spec_states, &label);
-            if spec_next_states.is_empty() {
+            let impl_next = next_by_label(impl_, &impl_closure.states, &label);
+            let spec_next = next_by_label(spec, &spec_closure.states, &label);
+            if spec_next.states.is_empty() {
                 let mut trace = reconstruct_trace(&predecessor, &node_key);
                 trace.push(label);
-                return TraceInclusionOutcome {
+                return RefinementOutcome {
                     refines: false,
-                    counterexample: Some(trace),
+                    failure: Some(RefinementFailure {
+                        trace,
+                        tags: vec!["trace_mismatch".to_string()],
+                    }),
                     stats: Stats {
                         states: Some(states_count),
                         transitions: Some(transitions_count),
@@ -278,25 +350,74 @@ fn trace_includes(
             }
 
             let next_key = NodeKey {
-                impl_sig: impl_next_sig,
-                spec_sig: spec_next_sig,
+                impl_sig: impl_next.sig.clone(),
+                spec_sig: spec_next.sig.clone(),
             };
             if visited.insert(next_key.clone()) {
                 predecessor.insert(next_key.clone(), (node_key.clone(), label));
-                queue.push_back((next_key, impl_next_states, spec_next_states));
+                queue.push_back((next_key, impl_next, spec_next));
                 states_count += 1;
             }
         }
     }
 
-    TraceInclusionOutcome {
+    RefinementOutcome {
         refines: true,
-        counterexample: None,
+        failure: None,
         stats: Stats {
             states: Some(states_count),
             transitions: Some(transitions_count),
         },
     }
+}
+
+fn trace_includes(
+    spec: &CspmTransitionProvider,
+    impl_: &CspmTransitionProvider,
+) -> RefinementOutcome {
+    bfs_refinement(
+        spec,
+        impl_,
+        |_node_key, _impl_states, _spec_states, _pred| None,
+    )
+}
+
+fn failures_includes(
+    spec: &CspmTransitionProvider,
+    impl_: &CspmTransitionProvider,
+) -> RefinementOutcome {
+    bfs_refinement(spec, impl_, |node_key, impl_states, spec_states, pred| {
+        let spec_stable_offers = stable_offer_sets(spec, spec_states);
+
+        for impl_state in impl_states {
+            if !is_stable(impl_, impl_state) {
+                continue;
+            }
+            let impl_offer = offered_visible_labels(impl_, impl_state);
+            let ok = spec_stable_offers
+                .iter()
+                .any(|spec_offer| spec_offer.is_subset(&impl_offer));
+            if ok {
+                continue;
+            }
+
+            let mut witness = BTreeSet::<String>::new();
+            for spec_offer in &spec_stable_offers {
+                if let Some(label) = spec_offer.difference(&impl_offer).next() {
+                    witness.insert(label.clone());
+                }
+            }
+
+            let mut tags = vec!["refusal_mismatch".to_string()];
+            tags.extend(witness.into_iter().map(|label| format!("refuse:{label}")));
+
+            return Some(RefinementFailure {
+                trace: reconstruct_trace(pred, node_key),
+                tags,
+            });
+        }
+        None
+    })
 }
 
 fn collect_spans(spec: &Module, impl_: &Module) -> Vec<SourceSpan> {
