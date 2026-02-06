@@ -52,6 +52,10 @@
 - `true`: minimizer が oracle で fail 維持を検証し、局所最小（1イベント削除で fail を維持できない）を確認済み。
 - `false`: 最小化未実施、または fail 維持を検証できず最小性を主張できない状態。
 
+### `counterexample.tags` の意味（v0.1）
+- 主要カテゴリ（`deadlock` / `divergence` / `nondeterminism` / `refinement`）を基本とする。
+- `kind:<カテゴリ>` と `explained` は Explainer が付与する説明タグ。
+
 ## 例（トップレベル）
 ```json
 {

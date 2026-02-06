@@ -29,6 +29,9 @@ assert System :[deadlock free [F]]
     assert_eq!(result.status, Status::Fail);
 
     let counterexample = result.counterexample.expect("counterexample");
+    assert!(counterexample.tags.contains(&"deadlock".to_string()));
+    assert!(counterexample.tags.contains(&"kind:deadlock".to_string()));
+    assert!(counterexample.tags.contains(&"explained".to_string()));
     assert_eq!(counterexample.source_spans.len(), 1);
     assert_eq!(counterexample.source_spans[0].start_line, 6);
 }

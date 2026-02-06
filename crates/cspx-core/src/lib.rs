@@ -1,10 +1,10 @@
 mod assertion_select;
 pub mod check;
-pub mod counterexample_span;
 pub mod check_deadlock;
 pub mod check_determinism;
 pub mod check_divergence;
 pub mod check_refine;
+pub mod counterexample_span;
 pub mod disk_store;
 pub mod explain;
 pub mod explain_simple;

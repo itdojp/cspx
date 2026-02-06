@@ -48,6 +48,8 @@ assert Div :[divergence free [FD]]
 
     let counterexample = result.counterexample.expect("counterexample");
     assert!(counterexample.tags.contains(&"divergence".to_string()));
+    assert!(counterexample.tags.contains(&"kind:divergence".to_string()));
+    assert!(counterexample.tags.contains(&"explained".to_string()));
     assert_eq!(counterexample.events.len(), 1);
     assert_eq!(counterexample.events[0].label, "tau");
 }

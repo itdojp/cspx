@@ -66,7 +66,11 @@ mod tests {
         let output = explainer.explain(counterexample);
 
         assert_eq!(
-            output.tags.iter().filter(|tag| tag.as_str() == "refinement").count(),
+            output
+                .tags
+                .iter()
+                .filter(|tag| tag.as_str() == "refinement")
+                .count(),
             1
         );
         assert_eq!(
