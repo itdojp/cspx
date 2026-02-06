@@ -21,6 +21,8 @@
 - `"divergence free"`
 - `"deterministic"`
 
+`divergence free`（v0.1）: 到達可能な τ-cycle（τ 遷移のみで閉じる cycle）が存在しないこと。
+
 ## `check --all-assertions`（v0.1）
 `cspx check --all-assertions <file>` は `<file>` 内の `assert` 宣言を **ファイル出現順** に列挙し、`checks` 配列に格納して出力する。
 
