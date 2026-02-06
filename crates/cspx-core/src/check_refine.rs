@@ -436,19 +436,9 @@ fn failures_includes(
                 continue;
             }
 
-            let mut witness = BTreeSet::<String>::new();
-            for spec_offer in &spec_stable_offers {
-                if let Some(label) = spec_offer.difference(&impl_offer).next() {
-                    witness.insert(label.clone());
-                }
-            }
-
-            let mut tags = vec!["refusal_mismatch".to_string()];
-            tags.extend(witness.into_iter().map(|label| format!("refuse:{label}")));
-
             return NodeAction::Fail(RefinementFailure {
                 trace: reconstruct_trace(pred, node_key),
-                tags,
+                tags: refusal_mismatch_tags(&spec_stable_offers, &impl_offer),
             });
         }
         NodeAction::Continue
@@ -486,24 +476,28 @@ fn failures_divergences_includes(
             if ok {
                 continue;
             }
-
-            let mut witness = BTreeSet::<String>::new();
-            for spec_offer in &spec_stable_offers {
-                if let Some(label) = spec_offer.difference(&impl_offer).next() {
-                    witness.insert(label.clone());
-                }
-            }
-
-            let mut tags = vec!["refusal_mismatch".to_string()];
-            tags.extend(witness.into_iter().map(|label| format!("refuse:{label}")));
             return NodeAction::Fail(RefinementFailure {
                 trace: reconstruct_trace(pred, node_key),
-                tags,
+                tags: refusal_mismatch_tags(&spec_stable_offers, &impl_offer),
             });
         }
 
         NodeAction::Continue
     })
+}
+
+fn refusal_mismatch_tags(
+    spec_stable_offers: &[BTreeSet<String>],
+    impl_offer: &BTreeSet<String>,
+) -> Vec<String> {
+    let mut tags = vec!["refusal_mismatch".to_string()];
+    for spec_offer in spec_stable_offers {
+        if let Some(label) = spec_offer.difference(impl_offer).next() {
+            tags.push(format!("refuse:{label}"));
+            break;
+        }
+    }
+    tags
 }
 
 fn collect_spans(spec: &Module, impl_: &Module) -> Vec<SourceSpan> {
