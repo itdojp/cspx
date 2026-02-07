@@ -2,7 +2,7 @@
 
 更新日: 2026-02-07  
 対象リポジトリ: `itdojp/cspx`  
-対象コミット（main）: `ea67da4f20374f520ce1d7f4f45b83031f36be33`
+検証対象コミット: `ea67da4f20374f520ce1d7f4f45b83031f36be33`（検証時点の main）
 
 ## 1. 目的
 本書は、`cspx` が以下を満たすことを示すための監査用エビデンスをまとめる。
@@ -77,7 +77,7 @@
   - ランナー自体の総合結果は `exit_code=0`（期待値評価まで含めて整合）。
 
 ### 4.3 GitHub CI 実績
-- 最新 `main` の CI run: `21768037668`
+- 検証時点（2026-02-07 時点）の `main`（commit `ea67da4f20374f520ce1d7f4f45b83031f36be33`）に対する CI run: `21768037668`
   - URL: `https://github.com/itdojp/cspx/actions/runs/21768037668`
   - conclusion: `success`
   - created_at: `2026-02-06T22:23:10Z`
