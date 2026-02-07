@@ -70,4 +70,10 @@ fn typecheck_parallel_options_are_recorded_in_invocation() {
     assert_eq!(json["invocation"]["parallel"], Value::from(2));
     assert_eq!(json["invocation"]["deterministic"], Value::from(true));
     assert_eq!(json["invocation"]["seed"], Value::from(7));
+    assert_eq!(json["metrics"]["parallelism"]["threads"], Value::from(2));
+    assert_eq!(
+        json["metrics"]["parallelism"]["deterministic"],
+        Value::from(true)
+    );
+    assert_eq!(json["metrics"]["parallelism"]["seed"], Value::from(7));
 }

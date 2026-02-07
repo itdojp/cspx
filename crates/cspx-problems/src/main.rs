@@ -788,6 +788,12 @@ fn normalize_json(mut value: JsonValue, extra_ignore: &[String]) -> JsonValue {
         "finished_at".to_string(),
         "duration_ms".to_string(),
         "tool.git_sha".to_string(),
+        "metrics.wall_time_ms".to_string(),
+        "metrics.cpu_time_ms".to_string(),
+        "metrics.peak_rss_bytes".to_string(),
+        "metrics.disk_bytes".to_string(),
+        "metrics.states_per_sec".to_string(),
+        "metrics.transitions_per_sec".to_string(),
     ];
     ignore.extend(extra_ignore.iter().cloned());
     for path in ignore {
