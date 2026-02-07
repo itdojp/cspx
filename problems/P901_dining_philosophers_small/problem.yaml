@@ -1,6 +1,7 @@
 id: P901
-title: dining philosophers (small, bench placeholder)
+title: dining philosophers (tiny, generated bench)
 suite: bench
-tags: [bench, dining_philosophers]
+tags: [bench, generated, dining_philosophers, tiny]
 run:
   cmd: ["cspx", "check", "--assert", "deadlock free", "model.cspm", "--format", "json"]
+  timeout_ms: 10000

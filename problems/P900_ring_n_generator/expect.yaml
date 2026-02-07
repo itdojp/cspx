@@ -1,9 +1,17 @@
+exit_code:
+  eq: 0
 status:
-  in: ["unsupported", "error"]
+  eq: "pass"
 checks:
   - name: check
+    target:
+      eq: "deadlock free"
     status:
-      in: ["unsupported", "error"]
-    reason:
-      kind:
-        in: ["unsupported_syntax", "not_implemented", "invalid_input"]
+      eq: "pass"
+    counterexample:
+      present: false
+    stats:
+      states:
+        min: 3
+      transitions:
+        min: 3

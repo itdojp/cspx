@@ -17,9 +17,20 @@ cargo build -p cspx
 scripts/run-problems --suite fast --cspx target/debug/cspx
 ```
 
+### bench suite をローカルで実行
+```sh
+cargo build -p cspx --release
+scripts/run-problems --suite bench --cspx target/release/cspx
+```
+
 ### 問題一覧を表示
 ```sh
 scripts/run-problems --suite fast --list
+```
+
+### bench 問題一覧を表示
+```sh
+scripts/run-problems --suite bench --list
 ```
 
 ### 特定問題のみ実行（ID 指定）
@@ -39,6 +50,25 @@ scripts/run-problems --cspx target/debug/cspx --only-dir problems/P000_hello_typ
 - `--cspx <path>`: `run.cmd[0] == "cspx"` の場合に `cspx` 実体を差し替える（例: `target/debug/cspx`）
 - `--jobs <n>`: 並列実行（問題単位、出力順は ID 昇順で安定化）
 
+## bench 生成問題の運用（#112）
+### 再生成手順（`problems/generators`）
+1) `problems/generators/regenerate_p900_p905.sh` を実行し、`P900`〜`P905` の `model.cspm` を再生成する  
+2) `scripts/run-problems --suite bench --list` で対象問題（`P310`, `P900`〜`P905`）が列挙されることを確認する  
+3) `cargo build -p cspx --release` 後に `scripts/run-problems --suite bench --cspx target/release/cspx --only P900 --only P901 --only P902 --only P903 --only P904 --only P905` を実行する  
+4) `problems/.out/<P###>/report.txt` と差分（`model.cspm` / `problem.yaml` / `expect.yaml` / `notes.md`）をレビューする
+
+### 推奨パラメータレンジ（tiny / medium）
+- `ring(N)`: tiny=`4`, medium=`16`
+- `philosophers(K)`: tiny=`3`, medium=`5`
+- `ABP(M)`（送受信シーケンス上限）: tiny=`1`（`0..1`）, medium=`3`（`0..3`）
+
+### bench 実行時の timeout/失敗運用
+- `P900`〜`P905` は `run.timeout_ms` を明示し、計測時の暴走を防ぐ
+- `P310` は timeout 挙動観測用の placeholder として、`pass/timeout/unsupported/error` を許容する
+- `run.timeout_ms` に達した run は runner が kill し、`exit_code=124` を記録する（`cspx --timeout-ms` の exit code `4` とは別）
+- 期待値不一致が 1 件以上ある場合、`scripts/run-problems` 全体の終了コードは `1`。runner 内部エラー（読み込み/spawn 失敗等）の場合は `2`
+- `bench` の timeout/失敗は性能観測の入力として扱い、まず `problems/.out` で原因を切り分けた上で再計測する
+
 ## CI での実行
 GitHub Actions では以下を実行する（`.github/workflows/ci.yml`）。
 ```sh
@@ -46,6 +76,11 @@ cargo build -p cspx
 scripts/run-problems --suite fast --cspx target/debug/cspx
 ```
 失敗時は `problems/.out` を artifact（`problems-out`）として upload する。
+
+### CI 責務分離（fast / bench）
+- `.github/workflows/ci.yml` の必須ジョブは `fast` のみを実行する
+- `bench` はローカル実行または専用 workflow（nightly / manual、#115 / #116）で扱い、PR 必須ゲートには含めない
+- 機能回帰判定は `fast`、性能回帰判定は `bench` 側で扱う
 
 ## 実行結果（`problems/.out`）
 問題実行の生成物は `problems/.out/<P###>/` 配下に出力される。
@@ -113,6 +148,7 @@ compare:
   - `problem.yaml`
   - `expect.yaml`
   - `notes.md`（任意）
+- 生成型 `bench` 問題は `problems/generators/` に生成ロジックと再生成手順を置く
 
 ## `problem.yaml`
 ### 例
@@ -202,6 +238,7 @@ target: { contains: "deadlock free" }
 ## 関連ドキュメント
 - `docs/cli.md`（exit code 規約、timeout など）
 - `docs/result-json.md`（Result JSON 形状と status/reason）
+- `problems/generators/README.md`（bench 生成問題の再生成手順）
 
 ## スキーマ
 - `schemas/problem.schema.json`
