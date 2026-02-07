@@ -41,8 +41,8 @@
 | `cpu_time_ms` | integer or null | yes | CPU 時間（現行は null） |
 | `peak_rss_bytes` | integer or null | yes | ピークメモリ（現行は null） |
 | `disk_bytes` | integer or null | yes | ディスク使用量（現行は null） |
-| `states_per_sec` | number or null | yes | `states / wall_time_ms`（`wall_time_ms=0` は null） |
-| `transitions_per_sec` | number or null | yes | `transitions / wall_time_ms`（`wall_time_ms=0` は null） |
+| `states_per_sec` | number or null | yes | `states * 1000 / wall_time_ms`（`wall_time_ms=0` は null） |
+| `transitions_per_sec` | number or null | yes | `transitions * 1000 / wall_time_ms`（`wall_time_ms=0` は null） |
 | `parallelism.threads` | integer | yes | 実行時スレッド数（`--parallel`） |
 | `parallelism.deterministic` | boolean | yes | 決定性モード（`--deterministic`） |
 | `parallelism.seed` | integer | yes | 探索 seed（`--seed`） |

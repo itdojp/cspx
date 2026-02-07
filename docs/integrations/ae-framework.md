@@ -57,7 +57,8 @@ cspx check --assert "deadlock free" spec/csp/sample.cspm \
 - `cspx` バージョンはタグ/コミット固定で導入する（再現性確保）。
 - `verify-csp` は non-blocking 運用でも、`csp-summary.json` を常に生成する。
 - `schema_version != 0.1` の場合は互換外として `unsupported` 扱いとする。
-- `schema_version == 0.1` で未知フィールド（例: `metrics`）が存在しても、互換内として扱う。
+- `schema_version == 0.1` では `schemas/cspx-result.schema.json` に定義されたフィールドを互換範囲とする（`metrics` はこのスキーマで定義済みの optional 拡張）。
+- consumer が strict schema validation を行う場合、未知フィールドは受理されない前提で運用する。
 
 ## セキュリティ前提
 - 信頼できない入力（fork PR 等）で任意コマンド経路を実行しない。

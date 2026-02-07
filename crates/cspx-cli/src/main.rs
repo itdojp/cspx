@@ -329,7 +329,11 @@ fn execute(cli: &Cli) -> Result<ExecuteOutput> {
     Ok((status, exit_code, checks, inputs, invocation))
 }
 
-fn build_metrics(checks: &[CheckResult], duration_ms: u64, invocation: &Invocation) -> ResultMetrics {
+fn build_metrics(
+    checks: &[CheckResult],
+    duration_ms: u64,
+    invocation: &Invocation,
+) -> ResultMetrics {
     let states = aggregate_stats(checks, |stats| stats.states);
     let transitions = aggregate_stats(checks, |stats| stats.transitions);
 
@@ -350,10 +354,7 @@ fn build_metrics(checks: &[CheckResult], duration_ms: u64, invocation: &Invocati
     }
 }
 
-fn aggregate_stats(
-    checks: &[CheckResult],
-    select: fn(&Stats) -> Option<u64>,
-) -> Option<u64> {
+fn aggregate_stats(checks: &[CheckResult], select: fn(&Stats) -> Option<u64>) -> Option<u64> {
     let mut total = 0_u64;
     for check in checks {
         let stats = check.stats.as_ref()?;
