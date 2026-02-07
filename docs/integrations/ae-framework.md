@@ -22,6 +22,7 @@
 - 集約サマリ:
   - 仕様: `schemas/csp-summary.schema.json`
   - `tool` は `csp` 固定
+  - `ran` は `true` 固定（`cspx` 自体が summary を生成できたことを意味する）
   - `backend` は `cspx:typecheck|assertions|refine`
   - `status` は `ran|failed|unsupported|timeout|out_of_memory|error`
   - `resultStatus` は cspx の `status` を保持

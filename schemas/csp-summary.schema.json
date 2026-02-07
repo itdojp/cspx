@@ -32,7 +32,7 @@
         null
       ]
     },
-    "ran": { "type": "boolean" },
+    "ran": { "const": true },
     "status": {
       "enum": [
         "ran",
@@ -40,11 +40,10 @@
         "unsupported",
         "timeout",
         "out_of_memory",
-        "error",
-        "tool_not_available"
+        "error"
       ]
     },
-    "exitCode": { "type": "integer" },
+    "exitCode": { "type": "integer", "minimum": 0 },
     "timestamp": { "type": "string", "format": "date-time" },
     "output": { "type": "string" }
   }

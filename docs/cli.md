@@ -95,6 +95,7 @@
 `--summary-json <path>` は ae-framework の `verify-csp` ランナーが集約しやすい要約を出力する。
 
 - `backend`: `cspx:typecheck` / `cspx:assertions` / `cspx:refine`
+- `ran`: `true`（`cspx` が summary を生成できたことを意味する）
 - `status`: `ran` / `failed` / `unsupported` / `timeout` / `out_of_memory` / `error`
 - `resultStatus`: cspx の `status`（`pass|fail|...`）
 - `detailsFile`: `--output` を指定し、かつ `--format json` のときのみ設定
