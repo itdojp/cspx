@@ -75,7 +75,7 @@ scripts/run-problems --suite fast --cspx target/debug/cspx
 
 ### CI 責務分離
 - `fast` のみを `ci.yml` の必須ジョブに含める
-- `bench` は別 workflow（nightly / manual。#115, #116）で運用する
+- `bench` は別 workflow（nightly / manual。#115, #116 で追加予定）で運用する
 - PR では機能回帰検知を優先し、性能回帰検知は専用導線で扱う
 
 ## 実行結果（`problems/.out`）
@@ -144,7 +144,7 @@ compare:
   - `problem.yaml`
   - `expect.yaml`
   - `notes.md`（任意）
-- 生成型の `bench` 問題は `problems/generators/` に生成手順（スクリプト/テンプレート）を置く
+- 生成型の `bench` 問題は `problems/generators/` に生成手順（スクリプト/テンプレート）を置く（`problems/generators/` は #112 で追加予定）
 
 ## `problem.yaml`
 ### 例
