@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   bench:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -24,6 +24,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p artifacts/bench
+          mkdir -p problems/.out
           set +e
           scripts/run-problems --suite bench --cspx target/release/cspx | tee artifacts/bench/run.log
           rc=$?
@@ -59,6 +60,11 @@ jobs:
           if [ "${rc}" -eq 2 ]; then
             echo "cspx-problems runner internal error" >&2
             exit 2
+          fi
+
+          if [ "${rc}" -ne 0 ] && [ "${rc}" -ne 1 ]; then
+            echo "Unexpected non-zero exit code from scripts/run-problems: ${rc}" >&2
+            exit "${rc}"
           fi
       - name: Upload bench artifacts
         if: always()

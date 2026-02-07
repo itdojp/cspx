@@ -50,7 +50,8 @@ scripts/run-problems --suite fast --cspx target/debug/cspx
 bench は `.github/workflows/bench.yml` で nightly（`schedule`）および手動（`workflow_dispatch`）実行する。
 - 実行ポリシー: `scripts/run-problems --suite bench --cspx target/release/cspx`
 - 生成物: artifact `bench-results`（`artifacts/bench`, `problems/.out`）
-- `scripts/run-problems` の終了コード `1`（期待値不一致）は workflow を fail させず、`2`（runner内部エラー）のみ fail とする
+- `scripts/run-problems` の終了コードは `0/1` を許容し、`1`（期待値不一致）は workflow を fail させない
+- `2`（runner内部エラー）および `0/1` 以外の想定外終了コードは workflow を fail とする
 
 ## 実行結果（`problems/.out`）
 問題実行の生成物は `problems/.out/<P###>/` 配下に出力される。
