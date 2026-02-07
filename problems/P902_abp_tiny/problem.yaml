@@ -1,6 +1,7 @@
 id: P902
-title: alternating bit protocol tiny (bench placeholder)
+title: alternating bit protocol (tiny, generated bench)
 suite: bench
-tags: [bench, protocol, abp]
+tags: [bench, generated, protocol, abp, tiny]
 run:
   cmd: ["cspx", "check", "--assert", "deadlock free", "model.cspm", "--format", "json"]
+  timeout_ms: 10000

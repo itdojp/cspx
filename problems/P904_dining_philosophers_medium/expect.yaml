@@ -12,6 +12,6 @@ checks:
       present: false
     stats:
       states:
-        min: 4
+        min: 24
       transitions:
-        min: 4
+        min: 120

@@ -1,0 +1,7 @@
+id: P905
+title: alternating bit protocol (medium, generated bench)
+suite: bench
+tags: [bench, generated, protocol, abp, medium]
+run:
+  cmd: ["cspx", "check", "--assert", "deadlock free", "model.cspm", "--format", "json"]
+  timeout_ms: 30000

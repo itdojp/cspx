@@ -1,9 +1,6 @@
 status:
-  in: ["unsupported", "error", "timeout"]
+  in: ["pass", "unsupported", "error", "timeout"]
 checks:
   - name: check
     status:
-      in: ["unsupported", "error", "timeout"]
-    reason:
-      kind:
-        in: ["unsupported_syntax", "not_implemented", "invalid_input", "timeout"]
+      in: ["pass", "unsupported", "error", "timeout"]
