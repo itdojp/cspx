@@ -67,6 +67,7 @@
 ## 共通オプション
 - `--format json|text`（default: `json`）
 - `--output <path>`（default: stdout）
+- `--summary-json <path>`（ae-framework 互換サマリを JSON で出力）
 - `--timeout-ms <n>`（任意）
 - `--memory-mb <n>`（任意）
 - `--parallel <n>`（default: `1`、`n>=1`）
@@ -87,7 +88,24 @@
 - `error` は「実行時例外・I/O 失敗・不正入力などのツールエラー」を示す。
 - `--timeout-ms` / `--memory-mb` が指定されない場合、Result JSON では `null` を出力する。
 - `--parallel` / `--deterministic` / `--seed` は invocation に記録される。
+- `--summary-json` を指定した場合、Result JSON とは別に `schemas/csp-summary.schema.json` 準拠の要約 JSON を出力する。
 - 現行の CLI 実装では `typecheck` の状態空間統計計算で並列探索設定が有効になる。
+
+## ae-framework 互換サマリ（`--summary-json`）
+`--summary-json <path>` は ae-framework の `verify-csp` ランナーが集約しやすい要約を出力する。
+
+- `backend`: `cspx:typecheck` / `cspx:assertions` / `cspx:refine`
+- `status`: `ran` / `failed` / `unsupported` / `timeout` / `out_of_memory` / `error`
+- `resultStatus`: cspx の `status`（`pass|fail|...`）
+- `detailsFile`: `--output` を指定し、かつ `--format json` のときのみ設定
+
+例:
+```sh
+cspx typecheck spec.cspm \
+  --format json \
+  --output artifacts/cspx-result.json \
+  --summary-json artifacts/csp-summary.json
+```
 
 ## 使用例
 ```sh

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "csp summary schema v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "tool",
+    "file",
+    "backend",
+    "detailsFile",
+    "resultStatus",
+    "ran",
+    "status",
+    "exitCode",
+    "timestamp",
+    "output"
+  ],
+  "properties": {
+    "tool": { "const": "csp" },
+    "file": { "type": "string" },
+    "backend": { "type": "string" },
+    "detailsFile": { "type": ["string", "null"] },
+    "resultStatus": {
+      "type": ["string", "null"],
+      "enum": [
+        "pass",
+        "fail",
+        "unsupported",
+        "timeout",
+        "out_of_memory",
+        "error",
+        null
+      ]
+    },
+    "ran": { "type": "boolean" },
+    "status": {
+      "enum": [
+        "ran",
+        "failed",
+        "unsupported",
+        "timeout",
+        "out_of_memory",
+        "error",
+        "tool_not_available"
+      ]
+    },
+    "exitCode": { "type": "integer" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "output": { "type": "string" }
+  }
+}

@@ -28,6 +28,9 @@ struct Cli {
     output: Option<PathBuf>,
 
     #[arg(long, global = true)]
+    summary_json: Option<PathBuf>,
+
+    #[arg(long, global = true)]
     timeout_ms: Option<u64>,
 
     #[arg(long, global = true)]
@@ -147,6 +150,21 @@ struct InputInfo {
     sha256: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CspSummaryJson {
+    tool: String,
+    file: String,
+    backend: String,
+    details_file: Option<String>,
+    result_status: Option<String>,
+    ran: bool,
+    status: String,
+    exit_code: i32,
+    timestamp: String,
+    output: String,
+}
+
 type ExecuteOutput = (Status, i32, Vec<CheckResult>, Vec<InputInfo>, Invocation);
 
 fn main() {
@@ -191,6 +209,10 @@ fn run(cli: Cli) -> Result<i32> {
         OutputFormat::Json => emit_json(&result, cli.output.as_deref()),
         OutputFormat::Text => emit_text(&result, cli.output.as_deref()),
     }?;
+
+    if let Some(path) = cli.summary_json.as_deref() {
+        emit_summary_json(&result, path, cli.output.as_deref(), cli.format)?;
+    }
 
     Ok(exit_code)
 }
@@ -1025,6 +1047,120 @@ fn emit_text(result: &ResultJson, output: Option<&Path>) -> Result<()> {
     }
     println!("{summary}");
     Ok(())
+}
+
+fn emit_summary_json(
+    result: &ResultJson,
+    summary_path: &Path,
+    output_path: Option<&Path>,
+    output_format: OutputFormat,
+) -> Result<()> {
+    let mode = summary_mode(&result.invocation.command);
+    let details_file = if matches!(output_format, OutputFormat::Json) {
+        output_path.map(|path| path.to_string_lossy().to_string())
+    } else {
+        None
+    };
+
+    let summary = CspSummaryJson {
+        tool: "csp".to_string(),
+        file: result
+            .inputs
+            .first()
+            .map(|input| input.path.clone())
+            .unwrap_or_default(),
+        backend: format!("cspx:{mode}"),
+        details_file,
+        result_status: Some(status_label(&result.status).to_string()),
+        ran: true,
+        status: summary_status_label(&result.status).to_string(),
+        exit_code: result.exit_code,
+        timestamp: result.finished_at.clone(),
+        output: clamp_text(&summarize_result_for_summary(result), 4000),
+    };
+
+    let payload = serde_json::to_string_pretty(&summary).context("serialize summary json")?;
+    write_atomic(summary_path, payload.as_bytes())
+}
+
+fn summary_mode(command: &str) -> &'static str {
+    match command {
+        "typecheck" => "typecheck",
+        "check" => "assertions",
+        "refine" => "refine",
+        _ => "unknown",
+    }
+}
+
+fn summary_status_label(status: &Status) -> &'static str {
+    match status {
+        Status::Pass => "ran",
+        Status::Fail => "failed",
+        Status::Unsupported => "unsupported",
+        Status::Timeout => "timeout",
+        Status::OutOfMemory => "out_of_memory",
+        Status::Error => "error",
+    }
+}
+
+fn summarize_result_for_summary(result: &ResultJson) -> String {
+    let checks_line = if result.checks.is_empty() {
+        "checks=n/a".to_string()
+    } else {
+        let checks = result
+            .checks
+            .iter()
+            .map(|check| format!("{}:{}", check.name, status_label(&check.status)))
+            .collect::<Vec<_>>()
+            .join(",");
+        format!("checks={checks}")
+    };
+
+    let reason_suffix = result
+        .checks
+        .iter()
+        .find_map(|check| check.reason.as_ref())
+        .map(|reason| {
+            let mut reason_text = format!(" reason={}", reason_kind_label(&reason.kind));
+            if let Some(message) = reason.message.as_ref() {
+                reason_text.push(':');
+                reason_text.push_str(&message.chars().take(120).collect::<String>());
+            }
+            reason_text
+        })
+        .unwrap_or_default();
+
+    format!(
+        "cspx schema={} status={} exit_code={} {}{}",
+        result.schema_version,
+        status_label(&result.status),
+        result.exit_code,
+        checks_line,
+        reason_suffix
+    )
+}
+
+fn reason_kind_label(kind: &ReasonKind) -> &'static str {
+    match kind {
+        ReasonKind::NotImplemented => "not_implemented",
+        ReasonKind::UnsupportedSyntax => "unsupported_syntax",
+        ReasonKind::InvalidInput => "invalid_input",
+        ReasonKind::InternalError => "internal_error",
+        ReasonKind::Timeout => "timeout",
+        ReasonKind::OutOfMemory => "out_of_memory",
+    }
+}
+
+fn clamp_text(text: &str, max_chars: usize) -> String {
+    let mut out = String::new();
+    for (idx, ch) in text.chars().enumerate() {
+        if idx >= max_chars {
+            out.push('…');
+            return out;
+        }
+        out.push(ch);
+    }
+    out
 }
 
 fn write_atomic(path: &Path, contents: &[u8]) -> Result<()> {
