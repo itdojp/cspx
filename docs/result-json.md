@@ -2,6 +2,8 @@
 
 `--format json` の標準出力（または `--output`）は、常に本仕様に従う。
 
+補足: ae-framework 互換の集約サマリは `--summary-json` で別ファイルに出力する（`schemas/csp-summary.schema.json`）。
+
 ## トップレベル
 | フィールド | 型 | 必須 | 説明 |
 |---|---|---|---|

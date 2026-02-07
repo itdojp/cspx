@@ -99,7 +99,12 @@ scripts/run-problems --suite bench --list
 - 問題集には「現時点で `unsupported/error` が期待値」のケースが存在する（仕様で明示済み）。
 - これは現状機能の境界を固定化するための運用であり、拡張時に期待値を段階更新する。
 
-## 7. 結論
+## 7. 統合契約の整備状況（ae-framework 向け）
+- `--summary-json` により、ae-framework 集約向けの要約 JSON を出力できる。
+- 契約仕様は `docs/integrations/ae-framework.md` と `schemas/csp-summary.schema.json` に明文化した。
+- `backend` / `status` / `resultStatus` / `exitCode` を固定項目として機械集約可能。
+
+## 8. 結論
 `cspx` は、v0.1 時点で以下を満たしている。
 
 - CIに組み込める回帰検知基盤（fast suite）

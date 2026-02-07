@@ -11,6 +11,8 @@ cspx は、CSPM の検査（typecheck/assertion/refinement）を CI で再現性
 - CLI 仕様: `docs/cli.md`
 - Result JSON 仕様: `docs/result-json.md`
 - アーキテクチャ: `docs/architecture.md`
+- Explainability ガイド: `docs/explainability.md`
+- ae-framework 統合契約: `docs/integrations/ae-framework.md`
 - 有用性・動作検証レポート: `docs/validation-report.md`
 - Problem Suite（回帰/デモ用 問題集）: `problems/README.md`
 
