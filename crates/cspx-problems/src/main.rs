@@ -1193,7 +1193,8 @@ fn aggregate_u64(values: &[u64]) -> AggregateValue {
     } else {
         let upper = sorted.len() / 2;
         let lower = upper - 1;
-        Some((sorted[lower] + sorted[upper]) / 2)
+        let sum = sorted[lower] as u128 + sorted[upper] as u128;
+        Some((sum / 2) as u64)
     };
 
     AggregateValue { min, median, max }

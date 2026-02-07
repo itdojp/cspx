@@ -89,7 +89,7 @@ checks:
 - `repeat`: `expect.yaml` を優先し、未指定の場合は `problem.yaml` の `run.repeat`、それも無ければ `1`
 - `compare.kind: normalized_json_equal`: `normalized.json` を run 間で比較する
 - CLI の `--measure-runs` は上記 `repeat` と比較して大きい方を採用する
-- `invocation.deterministic=true` の run が 2 回以上ある場合、runner は正規化 JSON の同一性を追加検証する
+- 測定 run が 2 回以上あり、かつ全ての run で `invocation.deterministic=true` の場合、runner は正規化 JSON の同一性を追加検証する
 
 正規化（`normalized.json`）では以下のフィールドを常に除外する。
 - `started_at`
