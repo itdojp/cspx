@@ -17,6 +17,7 @@
 | `finished_at` | string | yes | RFC3339 / UTC |
 | `duration_ms` | integer | yes | 実行時間（ミリ秒） |
 | `checks` | array | yes | チェック結果（少なくとも1件） |
+| `metrics` | object | no | 実行メトリクス（互換拡張。未対応 consumer は無視してよい） |
 
 ## `checks` 要素
 | フィールド | 型 | 必須 | 説明 |
@@ -28,6 +29,23 @@
 | `reason` | object | no | `status` が `pass` 以外の理由 |
 | `counterexample` | object or null | no | v0.1 では null でも可 |
 | `stats` | object | no | `states` / `transitions`（null 可） |
+
+## `metrics`（v0.1 互換拡張）
+`metrics` は任意フィールド（optional）で、既存 consumer との後方互換を維持する。
+
+| フィールド | 型 | 必須 | 説明 |
+|---|---|---|---|
+| `states` | integer or null | yes | `checks[].stats.states` の合計（取得不可時は null） |
+| `transitions` | integer or null | yes | `checks[].stats.transitions` の合計（取得不可時は null） |
+| `wall_time_ms` | integer | yes | 実行時間（`duration_ms` と同値） |
+| `cpu_time_ms` | integer or null | yes | CPU 時間（現行は null） |
+| `peak_rss_bytes` | integer or null | yes | ピークメモリ（現行は null） |
+| `disk_bytes` | integer or null | yes | ディスク使用量（現行は null） |
+| `states_per_sec` | number or null | yes | `states * 1000 / wall_time_ms`（`wall_time_ms=0` は null） |
+| `transitions_per_sec` | number or null | yes | `transitions * 1000 / wall_time_ms`（`wall_time_ms=0` は null） |
+| `parallelism.threads` | integer | yes | 実行時スレッド数（`--parallel`） |
+| `parallelism.deterministic` | boolean | yes | 決定性モード（`--deterministic`） |
+| `parallelism.seed` | integer | yes | 探索 seed（`--seed`） |
 
 ### `reason.kind`（enum）
 - `not_implemented`
@@ -91,6 +109,21 @@
       "counterexample": null,
       "stats": { "states": null, "transitions": null }
     }
-  ]
+  ],
+  "metrics": {
+    "states": null,
+    "transitions": null,
+    "wall_time_ms": 12,
+    "cpu_time_ms": null,
+    "peak_rss_bytes": null,
+    "disk_bytes": null,
+    "states_per_sec": null,
+    "transitions_per_sec": null,
+    "parallelism": {
+      "threads": 1,
+      "deterministic": false,
+      "seed": 0
+    }
+  }
 }
 ```

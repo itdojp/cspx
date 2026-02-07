@@ -123,6 +123,7 @@ struct ResultJson {
     finished_at: String,
     duration_ms: u64,
     checks: Vec<CheckResult>,
+    metrics: Option<ResultMetrics>,
 }
 
 #[derive(Serialize)]
@@ -140,6 +141,28 @@ struct Invocation {
     timeout_ms: Option<u64>,
     memory_mb: Option<u64>,
     parallel: usize,
+    deterministic: bool,
+    seed: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+struct ResultMetrics {
+    states: Option<u64>,
+    transitions: Option<u64>,
+    wall_time_ms: u64,
+    cpu_time_ms: Option<u64>,
+    peak_rss_bytes: Option<u64>,
+    disk_bytes: Option<u64>,
+    states_per_sec: Option<f64>,
+    transitions_per_sec: Option<f64>,
+    parallelism: ParallelismMetrics,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+struct ParallelismMetrics {
+    threads: usize,
     deterministic: bool,
     seed: u64,
 }
@@ -187,6 +210,7 @@ fn run(cli: Cli) -> Result<i32> {
 
     let finished_at = Utc::now();
     let duration_ms = timer.elapsed().as_millis() as u64;
+    let metrics = build_metrics(&checks, duration_ms, &invocation);
 
     let result = ResultJson {
         schema_version: "0.1".to_string(),
@@ -203,6 +227,7 @@ fn run(cli: Cli) -> Result<i32> {
         finished_at: finished_at.to_rfc3339_opts(SecondsFormat::Secs, true),
         duration_ms,
         checks,
+        metrics: Some(metrics),
     };
 
     match cli.format {
@@ -302,6 +327,48 @@ fn execute(cli: &Cli) -> Result<ExecuteOutput> {
     };
 
     Ok((status, exit_code, checks, inputs, invocation))
+}
+
+fn build_metrics(
+    checks: &[CheckResult],
+    duration_ms: u64,
+    invocation: &Invocation,
+) -> ResultMetrics {
+    let states = aggregate_stats(checks, |stats| stats.states);
+    let transitions = aggregate_stats(checks, |stats| stats.transitions);
+
+    ResultMetrics {
+        states,
+        transitions,
+        wall_time_ms: duration_ms,
+        cpu_time_ms: None,
+        peak_rss_bytes: None,
+        disk_bytes: None,
+        states_per_sec: throughput_per_sec(states, duration_ms),
+        transitions_per_sec: throughput_per_sec(transitions, duration_ms),
+        parallelism: ParallelismMetrics {
+            threads: invocation.parallel,
+            deterministic: invocation.deterministic,
+            seed: invocation.seed,
+        },
+    }
+}
+
+fn aggregate_stats(checks: &[CheckResult], select: fn(&Stats) -> Option<u64>) -> Option<u64> {
+    let mut total = 0_u64;
+    for check in checks {
+        let stats = check.stats.as_ref()?;
+        let value = select(stats)?;
+        total = total.saturating_add(value);
+    }
+    Some(total)
+}
+
+fn throughput_per_sec(value: Option<u64>, duration_ms: u64) -> Option<f64> {
+    if duration_ms == 0 {
+        return None;
+    }
+    value.map(|count| (count as f64 * 1000.0) / duration_ms as f64)
 }
 
 fn aggregate_status(checks: &[CheckResult]) -> Status {

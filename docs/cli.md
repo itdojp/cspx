@@ -88,6 +88,7 @@
 - `error` は「実行時例外・I/O 失敗・不正入力などのツールエラー」を示す。
 - `--timeout-ms` / `--memory-mb` が指定されない場合、Result JSON では `null` を出力する。
 - `--parallel` / `--deterministic` / `--seed` は invocation に記録される。
+- Result JSON は互換拡張として `metrics`（states/transitions/time/disk/parallelism）を持つことがある。
 - `--summary-json` を指定した場合、Result JSON とは別に `schemas/csp-summary.schema.json` 準拠の要約 JSON を出力する。
 - 現行の CLI 実装では `typecheck` の状態空間統計計算で並列探索設定が有効になる。
 
