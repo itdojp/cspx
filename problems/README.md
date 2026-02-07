@@ -59,7 +59,7 @@ scripts/run-problems --cspx target/debug/cspx --only-dir problems/P000_hello_typ
 
 ### 推奨パラメータレンジ（tiny / medium）
 - `ring(N)`: tiny=`4`, medium=`16`
-- `philosophers(K)`: tiny=`3`, medium=`5`
+- `philosopher_loops(K)`: tiny=`3`, medium=`5`（shared fork を省略した interleaving 近似）
 - `ABP(M)`（送受信シーケンス上限）: tiny=`1`（`0..1`）, medium=`3`（`0..3`）
 
 ### bench 実行時の timeout/失敗運用

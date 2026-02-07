@@ -1,7 +1,7 @@
 id: P901
-title: dining philosophers (tiny, generated bench)
+title: philosopher loops interleaving (tiny, generated bench)
 suite: bench
-tags: [bench, generated, dining_philosophers, tiny]
+tags: [bench, generated, interleaving, philosopher_loops, tiny]
 run:
   cmd: ["cspx", "check", "--assert", "deadlock free", "model.cspm", "--format", "json"]
   timeout_ms: 10000
