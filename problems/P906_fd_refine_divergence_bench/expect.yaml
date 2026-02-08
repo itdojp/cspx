@@ -1,0 +1,12 @@
+exit_code:
+  eq: 3
+status:
+  eq: "unsupported"
+checks:
+  - name:
+      eq: "refine"
+    status:
+      eq: "unsupported"
+    reason:
+      kind:
+        eq: "unsupported_syntax"

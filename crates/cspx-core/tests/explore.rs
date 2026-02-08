@@ -1,5 +1,6 @@
 use cspx_core::{
-    explore, explore_parallel, explore_parallel_with_options, InMemoryStateStore,
+    explore, explore_parallel, explore_parallel_profiled_with_options,
+    explore_parallel_with_options, explore_profiled, ExploreProfileMode, InMemoryStateStore,
     ParallelExploreOptions, SimpleTransitionProvider, StateStore, Transition, TransitionProvider,
     VecWorkQueue,
 };
@@ -113,6 +114,46 @@ impl TransitionProvider for BranchyProvider {
     }
 }
 
+#[derive(Clone, Copy)]
+struct DenseDuplicateProvider {
+    depth: u8,
+    fanout: u8,
+    duplicate_factor: u8,
+}
+
+impl DenseDuplicateProvider {
+    fn tr(label: &str) -> Transition {
+        Transition {
+            label: label.to_string(),
+        }
+    }
+}
+
+impl TransitionProvider for DenseDuplicateProvider {
+    type State = (u8, u8);
+    type Transition = Transition;
+
+    fn initial_state(&self) -> Self::State {
+        (0, 0)
+    }
+
+    fn transitions(&self, state: &Self::State) -> Vec<(Self::Transition, Self::State)> {
+        let (layer, _node) = *state;
+        if layer >= self.depth {
+            return Vec::new();
+        }
+
+        let mut out = Vec::with_capacity(self.fanout as usize * self.duplicate_factor as usize);
+        for branch in 0..self.fanout {
+            let next_state = (layer + 1, branch);
+            for _ in 0..self.duplicate_factor {
+                out.push((Self::tr("step"), next_state));
+            }
+        }
+        out
+    }
+}
+
 #[test]
 fn explore_parallel_deterministic_mode_is_reproducible() {
     let provider = BranchyProvider;
@@ -152,4 +193,96 @@ fn explore_parallel_deterministic_mode_normalizes_frontier_order() {
     assert_eq!(stats.states, Some(7));
     assert_eq!(stats.transitions, Some(6));
     assert_eq!(store.insertion_order, vec![0, 1, 2, 3, 4, 5, 6]);
+}
+
+#[test]
+fn explore_profiled_matches_explore_stats() {
+    let module = cspx_core::ir::Module {
+        channels: Vec::new(),
+        declarations: Vec::new(),
+        assertions: Vec::new(),
+        entry: Some(cspx_core::ir::Spanned {
+            value: cspx_core::ir::ProcessExpr::Stop,
+            span: cspx_core::types::SourceSpan {
+                path: "test.cspm".to_string(),
+                start_line: 1,
+                start_col: 1,
+                end_line: 1,
+                end_col: 4,
+            },
+        }),
+    };
+    let provider = SimpleTransitionProvider::from_module(&module).expect("provider");
+
+    let mut store_plain = InMemoryStateStore::new();
+    let mut queue_plain = VecWorkQueue::new();
+    let plain = explore(&provider, &mut store_plain, &mut queue_plain).expect("plain");
+
+    let mut store_profiled = InMemoryStateStore::new();
+    let mut queue_profiled = VecWorkQueue::new();
+    let (profiled, profile) =
+        explore_profiled(&provider, &mut store_profiled, &mut queue_profiled).expect("profiled");
+
+    assert_eq!(plain, profiled);
+    assert_eq!(profile.mode, ExploreProfileMode::Serial);
+    assert_eq!(profile.workers, 1);
+    assert_eq!(profile.discovered_states, 1);
+}
+
+#[test]
+fn explore_parallel_profiled_deterministic_matches_regular_stats() {
+    let provider = BranchyProvider;
+    let options = ParallelExploreOptions {
+        workers: 2,
+        deterministic: true,
+        seed: 123,
+    };
+    let mut plain_store = OrderedStore::new();
+    let plain =
+        explore_parallel_with_options(&provider, &mut plain_store, options).expect("plain stats");
+
+    let mut profiled_store = OrderedStore::new();
+    let (profiled, profile) =
+        explore_parallel_profiled_with_options(&provider, &mut profiled_store, options)
+            .expect("profiled stats");
+
+    assert_eq!(plain, profiled);
+    assert_eq!(profile.mode, ExploreProfileMode::ParallelDeterministic);
+    assert_eq!(profile.workers, 2);
+    assert_eq!(
+        profile.discovered_states,
+        profiled.states.unwrap_or_default()
+    );
+    assert!(profile.generated_transitions > 0);
+}
+
+#[test]
+fn explore_parallel_deterministic_dense_duplicates_preserve_stats() {
+    let provider = DenseDuplicateProvider {
+        depth: 5,
+        fanout: 24,
+        duplicate_factor: 6,
+    };
+    let options = ParallelExploreOptions {
+        workers: 4,
+        deterministic: true,
+        seed: 99,
+    };
+
+    let mut plain_store = InMemoryStateStore::new();
+    let plain =
+        explore_parallel_with_options(&provider, &mut plain_store, options).expect("plain stats");
+
+    let mut profiled_store = InMemoryStateStore::new();
+    let (profiled, profile) =
+        explore_parallel_profiled_with_options(&provider, &mut profiled_store, options)
+            .expect("profiled stats");
+
+    assert_eq!(plain, profiled);
+    assert_eq!(profiled.states, Some(121));
+    assert_eq!(profiled.transitions, Some(13_968));
+    assert_eq!(profile.levels, 6);
+    assert_eq!(profile.discovered_states, 121);
+    assert_eq!(profile.generated_transitions, 13_968);
+    assert!(profile.frontier_maintenance_ns > 0);
 }

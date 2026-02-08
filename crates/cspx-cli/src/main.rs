@@ -2,10 +2,12 @@ use anyhow::{anyhow, Context, Result};
 use chrono::{SecondsFormat, Utc};
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use cspx_core::{
-    explore, explore_parallel, explore_parallel_with_options, CheckRequest, CheckResult, Checker,
-    DeadlockChecker, DeterminismChecker, DivergenceChecker, Frontend, FrontendErrorKind,
-    InMemoryStateStore, ParallelExploreOptions, Reason, ReasonKind, RefinementChecker,
-    RefinementInput, SimpleFrontend, SimpleTransitionProvider, Stats, Status, VecWorkQueue,
+    explore, explore_parallel, explore_parallel_profiled, explore_parallel_profiled_with_options,
+    explore_parallel_with_options, explore_profiled, CheckRequest, CheckResult, Checker,
+    DeadlockChecker, DeterminismChecker, DivergenceChecker, ExploreHotspotProfile,
+    ExploreProfileMode, Frontend, FrontendErrorKind, InMemoryStateStore, ParallelExploreOptions,
+    Reason, ReasonKind, RefinementChecker, RefinementInput, SimpleFrontend,
+    SimpleTransitionProvider, Stats, Status, VecWorkQueue,
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -49,6 +51,9 @@ struct Cli {
 
     #[arg(long, global = true)]
     seed: Option<u64>,
+
+    #[arg(long, global = true)]
+    explore_profile: bool,
 }
 
 #[derive(Subcommand)]
@@ -157,6 +162,8 @@ struct ResultMetrics {
     states_per_sec: Option<f64>,
     transitions_per_sec: Option<f64>,
     parallelism: ParallelismMetrics,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    explore_hotspots: Option<ExploreHotspotsMetrics>,
 }
 
 #[derive(Serialize)]
@@ -165,6 +172,32 @@ struct ParallelismMetrics {
     threads: usize,
     deterministic: bool,
     seed: u64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+struct ExploreHotspotsMetrics {
+    mode: String,
+    workers: usize,
+    levels: u64,
+    expanded_states: u64,
+    discovered_states: u64,
+    generated_transitions: u64,
+    state_generation_ms: u64,
+    state_generation_wall_ms: u64,
+    visited_insert_ms: u64,
+    frontier_maintenance_ms: u64,
+    estimated_wait_ms: u64,
+    hotspots: Vec<HotspotEntry>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+struct HotspotEntry {
+    priority: u8,
+    phase: String,
+    time_ms: u64,
+    ratio_pct: f64,
 }
 
 #[derive(Serialize)]
@@ -188,7 +221,14 @@ struct CspSummaryJson {
     output: String,
 }
 
-type ExecuteOutput = (Status, i32, Vec<CheckResult>, Vec<InputInfo>, Invocation);
+type ExecuteOutput = (
+    Status,
+    i32,
+    Vec<CheckResult>,
+    Vec<InputInfo>,
+    Invocation,
+    Option<ExploreHotspotProfile>,
+);
 
 fn main() {
     let cli = Cli::parse();
@@ -206,11 +246,16 @@ fn run(cli: Cli) -> Result<i32> {
     let started_at = Utc::now();
     let timer = Instant::now();
 
-    let (status, exit_code, checks, inputs, invocation) = execute(&cli)?;
+    let (status, exit_code, checks, inputs, invocation, explore_hotspot_profile) = execute(&cli)?;
 
     let finished_at = Utc::now();
     let duration_ms = timer.elapsed().as_millis() as u64;
-    let metrics = build_metrics(&checks, duration_ms, &invocation);
+    let metrics = build_metrics(
+        &checks,
+        duration_ms,
+        &invocation,
+        explore_hotspot_profile.as_ref(),
+    );
 
     let result = ResultJson {
         schema_version: "0.1".to_string(),
@@ -251,21 +296,23 @@ fn execute(cli: &Cli) -> Result<ExecuteOutput> {
     }
     let seed = cli.seed.unwrap_or(0);
 
-    let (command, args, inputs, checks) = match &cli.command {
+    let (command, args, inputs, checks, explore_hotspot_profile) = match &cli.command {
         Command::Typecheck { file } => {
             let (inputs, io_error) = build_inputs(std::slice::from_ref(file));
-            let checks = vec![run_typecheck(
+            let (check, profile) = run_typecheck(
                 file,
                 io_error.as_ref(),
                 cli.parallel,
                 cli.deterministic,
                 seed,
-            )];
+                cli.explore_profile,
+            );
             (
                 "typecheck".to_string(),
                 vec![file.to_string_lossy().to_string()],
                 inputs,
-                checks,
+                vec![check],
+                profile,
             )
         }
         Command::Check(args) => {
@@ -292,6 +339,7 @@ fn execute(cli: &Cli) -> Result<ExecuteOutput> {
                 vec![args.file.to_string_lossy().to_string()],
                 inputs,
                 checks,
+                None,
             )
         }
         Command::Refine(args) => {
@@ -305,6 +353,7 @@ fn execute(cli: &Cli) -> Result<ExecuteOutput> {
                 ],
                 inputs,
                 checks,
+                None,
             )
         }
     };
@@ -326,13 +375,21 @@ fn execute(cli: &Cli) -> Result<ExecuteOutput> {
         seed,
     };
 
-    Ok((status, exit_code, checks, inputs, invocation))
+    Ok((
+        status,
+        exit_code,
+        checks,
+        inputs,
+        invocation,
+        explore_hotspot_profile,
+    ))
 }
 
 fn build_metrics(
     checks: &[CheckResult],
     duration_ms: u64,
     invocation: &Invocation,
+    explore_hotspot_profile: Option<&ExploreHotspotProfile>,
 ) -> ResultMetrics {
     let states = aggregate_stats(checks, |stats| stats.states);
     let transitions = aggregate_stats(checks, |stats| stats.transitions);
@@ -351,6 +408,7 @@ fn build_metrics(
             deterministic: invocation.deterministic,
             seed: invocation.seed,
         },
+        explore_hotspots: explore_hotspot_profile.map(build_explore_hotspots),
     }
 }
 
@@ -369,6 +427,68 @@ fn throughput_per_sec(value: Option<u64>, duration_ms: u64) -> Option<f64> {
         return None;
     }
     value.map(|count| (count as f64 * 1000.0) / duration_ms as f64)
+}
+
+fn build_explore_hotspots(profile: &ExploreHotspotProfile) -> ExploreHotspotsMetrics {
+    let mut phases: Vec<(&str, u64)> = vec![
+        ("state_generation", profile.state_generation_ns),
+        ("visited_insert", profile.visited_insert_ns),
+        ("frontier_maintenance", profile.frontier_maintenance_ns),
+        ("estimated_wait", profile.estimated_wait_ns),
+    ];
+    phases.retain(|(_, ns)| *ns > 0);
+    phases.sort_by(|lhs, rhs| rhs.1.cmp(&lhs.1));
+
+    let total_ns = phases
+        .iter()
+        .fold(0_u64, |sum, (_, ns)| sum.saturating_add(*ns));
+    let hotspots = phases
+        .iter()
+        .enumerate()
+        .map(|(index, (phase, ns))| HotspotEntry {
+            priority: (index + 1) as u8,
+            phase: (*phase).to_string(),
+            time_ms: ns_to_ms(*ns),
+            ratio_pct: ratio_pct(*ns, total_ns),
+        })
+        .collect::<Vec<_>>();
+
+    ExploreHotspotsMetrics {
+        mode: explore_mode_name(profile.mode).to_string(),
+        workers: profile.workers,
+        levels: profile.levels,
+        expanded_states: profile.expanded_states,
+        discovered_states: profile.discovered_states,
+        generated_transitions: profile.generated_transitions,
+        state_generation_ms: ns_to_ms(profile.state_generation_ns),
+        state_generation_wall_ms: ns_to_ms(profile.state_generation_wall_ns),
+        visited_insert_ms: ns_to_ms(profile.visited_insert_ns),
+        frontier_maintenance_ms: ns_to_ms(profile.frontier_maintenance_ns),
+        estimated_wait_ms: ns_to_ms(profile.estimated_wait_ns),
+        hotspots,
+    }
+}
+
+fn ns_to_ms(value: u64) -> u64 {
+    if value == 0 {
+        return 0;
+    }
+    value.saturating_add(999_999) / 1_000_000
+}
+
+fn ratio_pct(value: u64, total: u64) -> f64 {
+    if total == 0 {
+        return 0.0;
+    }
+    (value as f64 * 100.0) / total as f64
+}
+
+fn explore_mode_name(mode: ExploreProfileMode) -> &'static str {
+    match mode {
+        ExploreProfileMode::Serial => "serial",
+        ExploreProfileMode::Parallel => "parallel",
+        ExploreProfileMode::ParallelDeterministic => "parallel_deterministic",
+    }
 }
 
 fn aggregate_status(checks: &[CheckResult]) -> Status {
@@ -445,26 +565,33 @@ fn run_typecheck(
     parallel: usize,
     deterministic: bool,
     seed: u64,
-) -> CheckResult {
+    explore_profile: bool,
+) -> (CheckResult, Option<ExploreHotspotProfile>) {
     if let Some(message) = io_error {
-        return error_check(
-            "typecheck",
+        return (
+            error_check(
+                "typecheck",
+                None,
+                None,
+                ReasonKind::InvalidInput,
+                message.clone(),
+            ),
             None,
-            None,
-            ReasonKind::InvalidInput,
-            message.clone(),
         );
     }
 
     let source = match fs::read_to_string(file) {
         Ok(source) => source,
         Err(err) => {
-            return error_check(
-                "typecheck",
+            return (
+                error_check(
+                    "typecheck",
+                    None,
+                    None,
+                    ReasonKind::InvalidInput,
+                    format!("{}: {err}", file.display()),
+                ),
                 None,
-                None,
-                ReasonKind::InvalidInput,
-                format!("{}: {err}", file.display()),
             )
         }
     };
@@ -472,16 +599,20 @@ fn run_typecheck(
     let frontend = SimpleFrontend;
     match frontend.parse_and_typecheck(&source, &file.to_string_lossy()) {
         Ok(output) => {
-            let stats = build_stats(&output.ir, parallel, deterministic, seed);
-            CheckResult {
-                name: "typecheck".to_string(),
-                model: None,
-                target: None,
-                status: Status::Pass,
-                reason: None,
-                counterexample: None,
-                stats: Some(stats),
-            }
+            let (stats, profile) =
+                build_stats(&output.ir, parallel, deterministic, seed, explore_profile);
+            (
+                CheckResult {
+                    name: "typecheck".to_string(),
+                    model: None,
+                    target: None,
+                    status: Status::Pass,
+                    reason: None,
+                    counterexample: None,
+                    stats: Some(stats),
+                },
+                profile,
+            )
         }
         Err(err) => {
             let (status, reason_kind) = match err.kind {
@@ -490,21 +621,24 @@ fn run_typecheck(
                 }
                 FrontendErrorKind::InvalidInput => (Status::Error, ReasonKind::InvalidInput),
             };
-            CheckResult {
-                name: "typecheck".to_string(),
-                model: None,
-                target: None,
-                status,
-                reason: Some(Reason {
-                    kind: reason_kind,
-                    message: Some(err.to_string()),
-                }),
-                counterexample: None,
-                stats: Some(Stats {
-                    states: None,
-                    transitions: None,
-                }),
-            }
+            (
+                CheckResult {
+                    name: "typecheck".to_string(),
+                    model: None,
+                    target: None,
+                    status,
+                    reason: Some(Reason {
+                        kind: reason_kind,
+                        message: Some(err.to_string()),
+                    }),
+                    counterexample: None,
+                    stats: Some(Stats {
+                        states: None,
+                        transitions: None,
+                    }),
+                },
+                None,
+            )
         }
     }
 }
@@ -514,41 +648,72 @@ fn build_stats(
     parallel: usize,
     deterministic: bool,
     seed: u64,
-) -> Stats {
+    explore_profile: bool,
+) -> (Stats, Option<ExploreHotspotProfile>) {
     let provider = match SimpleTransitionProvider::from_module(module) {
         Ok(provider) => provider,
         Err(_) => {
-            return Stats {
-                states: None,
-                transitions: None,
-            }
+            return (
+                Stats {
+                    states: None,
+                    transitions: None,
+                },
+                None,
+            )
         }
     };
 
     let mut store = InMemoryStateStore::new();
     let result = if deterministic {
-        explore_parallel_with_options(
-            &provider,
-            &mut store,
-            ParallelExploreOptions {
-                workers: parallel,
-                deterministic: true,
-                seed,
-            },
-        )
+        if explore_profile {
+            explore_parallel_profiled_with_options(
+                &provider,
+                &mut store,
+                ParallelExploreOptions {
+                    workers: parallel,
+                    deterministic: true,
+                    seed,
+                },
+            )
+            .map(|(stats, profile)| (stats, Some(profile)))
+        } else {
+            explore_parallel_with_options(
+                &provider,
+                &mut store,
+                ParallelExploreOptions {
+                    workers: parallel,
+                    deterministic: true,
+                    seed,
+                },
+            )
+            .map(|stats| (stats, None))
+        }
     } else if parallel > 1 {
-        explore_parallel(&provider, &mut store, parallel)
+        if explore_profile {
+            explore_parallel_profiled(&provider, &mut store, parallel)
+                .map(|(stats, profile)| (stats, Some(profile)))
+        } else {
+            explore_parallel(&provider, &mut store, parallel).map(|stats| (stats, None))
+        }
     } else {
         let mut queue = VecWorkQueue::new();
-        explore(&provider, &mut store, &mut queue)
+        if explore_profile {
+            explore_profiled(&provider, &mut store, &mut queue)
+                .map(|(stats, profile)| (stats, Some(profile)))
+        } else {
+            explore(&provider, &mut store, &mut queue).map(|stats| (stats, None))
+        }
     };
 
     match result {
-        Ok(stats) => stats,
-        Err(_) => Stats {
-            states: None,
-            transitions: None,
-        },
+        Ok((stats, profile)) => (stats, profile),
+        Err(_) => (
+            Stats {
+                states: None,
+                transitions: None,
+            },
+            None,
+        ),
     }
 }
 

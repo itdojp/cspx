@@ -54,6 +54,34 @@
 - `open` で `state.lock` を `create_new` し、取得できない場合は `WouldBlock` で失敗させる。
 - プロセス正常終了時は lock を削除する（異常終了で lock が残る場合は手動削除が必要）。
 
+### WS5-A 計測（v0.2）
+`DiskStateStore::metrics()` で、次の観測値を取得する。
+
+- `open_ns`, `lock_wait_ns`, `lock_contention_events`, `lock_retries`
+- `index_load_ns`, `index_rebuild_ns`, `index_entries_loaded`, `index_entries_rebuilt`
+- `log_read_bytes`, `index_read_bytes`
+- `insert_calls`, `insert_collisions`
+- `log_write_ops`, `log_write_ns`, `log_write_bytes`
+- `index_write_ops`, `index_write_ns`, `index_write_bytes`, `pending_index_updates`
+
+代表負荷の取得は `cargo run -q -p cspx-core --example store_profile_compare` を使用する。
+同一ワークロードで `InMemoryStateStore` と `DiskStateStore` を比較し、WS5-B の最適化優先順位（I/O vs 衝突 vs lock）を判断する。
+
+### WS5-B 最小実装（v0.2）
+- `DiskStateStoreOpenOptions.index_flush_every` を追加し、外部 index のバッチ更新を有効化する（default: `1`）。
+- `insert` は log 追記を都度実行し、idx は `index_flush_every` 件ごとに flush する。
+- `Drop` 時に pending idx を best-effort で flush し、再起動時は `log_len` 照合で整合を担保する。
+- `HybridStateStore` を追加し、`spill_threshold` 超過時に memory 優先から disk spill へ移行する最小ポリシーを提供する。
+- 代表負荷（`store_profile_compare`）では `index_flush_every=1` と比較して `index_flush_every=256` で次を確認した。
+  - `disk_elapsed_ns`: `39,710,867,729` -> `197,141,492`
+  - `index_write_ops`: `5,001` -> `20`
+  - `index_write_bytes`: `112,686,295` -> `438,412`
+
+### IF 境界（将来外部KV差し替え）
+- 探索エンジン境界: `StateStore<S>` trait（`insert`/`len`）。
+- 永続化境界: `StateCodec<S>`（state のエンコード/デコード互換を固定）。
+- backend 依存境界: `DiskStateStoreOpenOptions` / `HybridStateStoreOptions` に集約し、探索側ロジックを変更せず backend を差し替え可能にする。
+
 ### v0.3+ 要件（高度化）
 現行 v0.2 実装（lock file 排他、hex index）を踏まえ、将来の高度化要件を以下に示す。
 
@@ -139,6 +167,22 @@ deterministic mode は「スケジュールに依存しない探索順」を仕�
   - 既定除外: `started_at`, `finished_at`, `duration_ms`, `tool.git_sha` に加え、`metrics` の時間依存項目。
 - 不一致時は `report.txt` を `FAIL` とし、run 間差分があることを明示する。
 
+## FD重経路ベンチと divergence 計測（WS6-A / v0.2）
+### 題材固定
+- `problems/P906_fd_refine_divergence_bench` を bench 題材として追加する。
+- 現行 frontend 制約を反映し、問題集側の期待値は `unsupported` に固定する。
+
+### divergence 計測項目
+- `RefinementChecker(FD)` は counterexample tags に次を付与する。
+  - `fd_nodes`, `fd_edges`, `fd_divergence_checks`, `fd_pruned_nodes`
+  - `fd_impl_closure_max`, `fd_spec_closure_max`
+- `scripts/run-problems` の `metrics-summary.json` は、上記タグがある run で `aggregate.divergence` を出力する。
+
+### 再現手順
+- 問題集導線（暫定期待値確認）: `scripts/run-problems --suite bench --only P906 --measure-runs 3 --warmup-runs 1`
+- FD重経路の実計測（CI外）: `cargo run -q -p cspx-core --example fd_divergence_bench`
+  - 例: `ring_size=512`, `fd_impl_closure_max=512`, `fd_divergence_checks=2`
+
 ## baseline 比較と閾値判定（WS3-B / v0.2）
 ### 目的
 - bench 実行結果を baseline と比較し、性能劣化を `warn/fail` で機械判定する。
@@ -166,6 +210,43 @@ deterministic mode は「スケジュールに依存しない探索順」を仕�
 - baseline は `benchmarks/baseline/bench-metrics-baseline.json` を repo 管理とする。
 - workflow_dispatch の `update_baseline_candidate=true` で候補 JSON を artifact 出力し、PR で更新する。
 - 詳細運用は `docs/bench-baseline.md` を参照。
+## 探索ホットパス可視化（WS4-A / v0.2）
+### 目的
+- 探索エンジンの最適化対象を定量化し、WS4-B/WS5 の優先順位を機械的に決める。
+- 計測 ON/OFF を切替可能にし、既存の検査結果への影響がないことを担保する。
+
+### 計測の有効化
+- `cspx typecheck ... --explore-profile` を指定すると、Result JSON の `metrics.explore_hotspots` が出力される。
+- 未指定時は `metrics.explore_hotspots` を出力しない（従来互換）。
+
+### 計測項目
+- `state_generation_ms`: `TransitionProvider::transitions` 実行時間（CPU寄り）
+- `state_generation_wall_ms`: 並列時の state 生成 wall time
+- `visited_insert_ms`: visited/store への insert 時間（DiskStore では I/Oを含む）
+- `frontier_maintenance_ms`: frontier sort / dedup 時間
+- `estimated_wait_ms`: 並列時の概算待機時間（`workers * wall - busy`）
+- `hotspots`: 時間降順の上位フェーズ（`priority`, `time_ms`, `ratio_pct`）
+
+### WS4-B/WS5 への受け渡し
+- `hotspots[0]` が `state_generation` 優位なら WS4-B（探索処理）を先行する。
+- `hotspots[0]` が `visited_insert` 優位なら WS5（Disk/Hybrid store）を先行する。
+- `frontier_maintenance` 優位なら deterministic 探索の frontier 正規化・dedup を最適化対象にする。
+
+## 探索エンジン最適化（WS4-B / v0.2）
+### 実装方針
+- deterministic 並列探索で「前段でソート済み frontier を次段で再ソートする」処理を削減する。
+- 並列チャンクごとに `next_state` へ早期変換し、局所 `sort/dedup` を先行して中間データ量を圧縮する。
+- `candidates` / `next_frontier` を事前確保し、再確保回数を削減する。
+- worker 内で実施した局所 `sort/dedup` 時間を busy 側に計上し、`estimated_wait` の解釈を維持する。
+
+### 効果測定（7-run median）
+- 再現コマンド: `cargo run -q -p cspx-core --example explore_hotspot_bench`
+- 比較条件: baseline=`b3a8c39`（WS4-A） vs WS4-B 実装後、同一マシン・同一オプション。
+- 注記: 以下は `explore_hotspot_bench` の標準出力（`*_ns`）であり、Result JSON の `metrics.explore_hotspots` は `*_ms` で出力する。
+- `state_generation_ns`: `25,466,309` -> `21,203,640`（`-16.74%`）
+- `frontier_maintenance_ns`: `22,786,045` -> `16,784,140`（`-26.34%`）
+- `visited_insert_ns`: `333,676` -> `371,466`（`+11.33%`、次段 WS5 で最適化対象）
+- `estimated_wait_ns`: `11,128,346` -> `14,494,973`（`+30.25%`、負荷偏りの追加分析は WS6 で扱う）
 
 ## FD最適化バックログ（WS6-B）
 - WS6-A（`#121`）の計測導線を基準に、WS6-B の優先順位付き backlog を定義した。

@@ -1,0 +1,7 @@
+id: P906
+title: FD refinement divergence ring (bench)
+suite: bench
+tags: [bench, refinement, divergences, fd, heavy]
+run:
+  cmd: ["cspx", "refine", "--model", "FD", "spec.cspm", "impl.cspm", "--format", "json"]
+  timeout_ms: 30000

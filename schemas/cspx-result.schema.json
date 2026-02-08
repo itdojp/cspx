@@ -104,6 +104,53 @@
             "deterministic": { "type": "boolean" },
             "seed": { "type": "integer", "minimum": 0 }
           }
+        },
+        "explore_hotspots": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "workers",
+            "levels",
+            "expanded_states",
+            "discovered_states",
+            "generated_transitions",
+            "state_generation_ms",
+            "state_generation_wall_ms",
+            "visited_insert_ms",
+            "frontier_maintenance_ms",
+            "estimated_wait_ms",
+            "hotspots"
+          ],
+          "properties": {
+            "mode": {
+              "enum": ["serial", "parallel", "parallel_deterministic"]
+            },
+            "workers": { "type": "integer", "minimum": 1 },
+            "levels": { "type": "integer", "minimum": 0 },
+            "expanded_states": { "type": "integer", "minimum": 0 },
+            "discovered_states": { "type": "integer", "minimum": 0 },
+            "generated_transitions": { "type": "integer", "minimum": 0 },
+            "state_generation_ms": { "type": "integer", "minimum": 0 },
+            "state_generation_wall_ms": { "type": "integer", "minimum": 0 },
+            "visited_insert_ms": { "type": "integer", "minimum": 0 },
+            "frontier_maintenance_ms": { "type": "integer", "minimum": 0 },
+            "estimated_wait_ms": { "type": "integer", "minimum": 0 },
+            "hotspots": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["priority", "phase", "time_ms", "ratio_pct"],
+                "properties": {
+                  "priority": { "type": "integer", "minimum": 1 },
+                  "phase": { "type": "string" },
+                  "time_ms": { "type": "integer", "minimum": 0 },
+                  "ratio_pct": { "type": "number", "minimum": 0 }
+                }
+              }
+            }
+          }
         }
       }
     },

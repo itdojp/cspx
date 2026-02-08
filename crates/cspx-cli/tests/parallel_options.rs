@@ -77,3 +77,60 @@ fn typecheck_parallel_options_are_recorded_in_invocation() {
     );
     assert_eq!(json["metrics"]["parallelism"]["seed"], Value::from(7));
 }
+
+#[test]
+fn explore_profile_is_absent_by_default() {
+    let root = repo_root();
+    let output = cargo_bin_cmd!("cspx")
+        .current_dir(&root)
+        .args(["typecheck", "tests/cases/ok.cspm", "--format", "json"])
+        .output()
+        .expect("run cspx");
+    assert!(output.status.success());
+
+    let json: Value = serde_json::from_slice(&output.stdout).expect("parse json");
+    let metrics = json["metrics"].as_object().expect("metrics");
+    assert!(!metrics.contains_key("explore_hotspots"));
+}
+
+#[test]
+fn explore_profile_on_off_keeps_result_and_stats_consistent() {
+    let root = repo_root();
+    let run = |with_profile: bool| -> Value {
+        let mut args = vec![
+            "typecheck",
+            "tests/cases/ok.cspm",
+            "--parallel",
+            "2",
+            "--deterministic",
+            "--seed",
+            "42",
+            "--format",
+            "json",
+        ];
+        if with_profile {
+            args.push("--explore-profile");
+        }
+        let output = cargo_bin_cmd!("cspx")
+            .current_dir(&root)
+            .args(&args)
+            .output()
+            .expect("run cspx");
+        assert!(output.status.success());
+        serde_json::from_slice(&output.stdout).expect("parse json")
+    };
+
+    let plain = run(false);
+    let profiled = run(true);
+
+    assert_eq!(plain["status"], profiled["status"]);
+    assert_eq!(plain["checks"][0]["stats"], profiled["checks"][0]["stats"]);
+    assert_eq!(
+        profiled["metrics"]["explore_hotspots"]["mode"],
+        "parallel_deterministic"
+    );
+    assert_eq!(
+        profiled["metrics"]["explore_hotspots"]["workers"],
+        Value::from(2)
+    );
+}

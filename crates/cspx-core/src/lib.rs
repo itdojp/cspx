@@ -21,6 +21,7 @@ pub mod queue;
 pub mod queue_inmemory;
 pub mod state_codec;
 pub mod store;
+pub mod store_hybrid;
 pub mod store_inmemory;
 pub mod types;
 
@@ -29,11 +30,13 @@ pub use check_deadlock::DeadlockChecker;
 pub use check_determinism::DeterminismChecker;
 pub use check_divergence::DivergenceChecker;
 pub use check_refine::{RefinementChecker, RefinementInput};
-pub use disk_store::DiskStateStore;
+pub use disk_store::{DiskStateStore, DiskStateStoreMetrics, DiskStateStoreOpenOptions};
 pub use explain::Explainer;
 pub use explain_simple::BasicExplainer;
 pub use explore::{
-    explore, explore_parallel, explore_parallel_with_options, ParallelExploreOptions,
+    explore, explore_parallel, explore_parallel_profiled, explore_parallel_profiled_with_options,
+    explore_parallel_with_options, explore_profiled, ExploreHotspotProfile, ExploreProfileMode,
+    ParallelExploreOptions,
 };
 pub use frontend::{Frontend, FrontendOutput};
 pub use frontend_simple::{FrontendError, FrontendErrorKind, SimpleFrontend};
@@ -50,6 +53,7 @@ pub use queue::WorkQueue;
 pub use queue_inmemory::VecWorkQueue;
 pub use state_codec::StateCodec;
 pub use store::StateStore;
+pub use store_hybrid::{HybridStateStore, HybridStateStoreOptions};
 pub use store_inmemory::InMemoryStateStore;
 pub use types::{
     Counterexample, CounterexampleEvent, CounterexampleType, Diagnostic, Reason, ReasonKind,
