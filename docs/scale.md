@@ -139,6 +139,22 @@ deterministic mode は「スケジュールに依存しない探索順」を仕�
   - 既定除外: `started_at`, `finished_at`, `duration_ms`, `tool.git_sha` に加え、`metrics` の時間依存項目。
 - 不一致時は `report.txt` を `FAIL` とし、run 間差分があることを明示する。
 
+## FD重経路ベンチと divergence 計測（WS6-A / v0.2）
+### 題材固定
+- `problems/P906_fd_refine_divergence_bench` を bench 題材として追加する。
+- 現行 frontend 制約を反映し、問題集側の期待値は `unsupported` に固定する。
+
+### divergence 計測項目
+- `RefinementChecker(FD)` は counterexample tags に次を付与する。
+  - `fd_nodes`, `fd_edges`, `fd_divergence_checks`, `fd_pruned_nodes`
+  - `fd_impl_closure_max`, `fd_spec_closure_max`
+- `scripts/run-problems` の `metrics-summary.json` は、上記タグがある run で `aggregate.divergence` を出力する。
+
+### 再現手順
+- 問題集導線（暫定期待値確認）: `scripts/run-problems --suite bench --only P906 --measure-runs 3 --warmup-runs 1`
+- FD重経路の実計測（CI外）: `cargo run -q -p cspx-core --example fd_divergence_bench`
+  - 例: `ring_size=512`, `fd_impl_closure_max=512`, `fd_divergence_checks=2`
+
 ## baseline 比較と閾値判定（WS3-B / v0.2）
 ### 目的
 - bench 実行結果を baseline と比較し、性能劣化を `warn/fail` で機械判定する。

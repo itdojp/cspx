@@ -486,4 +486,20 @@ fn failures_divergences_refinement_fails_on_impl_divergence() {
         .iter()
         .any(|t| t == "divergence_mismatch"));
     assert!(counterexample.tags.iter().any(|t| t == "divergence"));
+    assert!(counterexample
+        .tags
+        .iter()
+        .any(|t| t.starts_with("fd_nodes:")));
+    assert!(counterexample
+        .tags
+        .iter()
+        .any(|t| t.starts_with("fd_edges:")));
+    assert!(counterexample
+        .tags
+        .iter()
+        .any(|t| t.starts_with("fd_divergence_checks:")));
+    assert!(counterexample
+        .tags
+        .iter()
+        .any(|t| t.starts_with("fd_impl_closure_max:")));
 }

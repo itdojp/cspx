@@ -873,6 +873,8 @@ struct MeasuredRunSummary {
     duration_ms: Option<u64>,
     states: Option<u64>,
     transitions: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    divergence: Option<DivergenceRunSummary>,
 }
 
 #[derive(Serialize)]
@@ -880,6 +882,8 @@ struct MeasurementAggregateSummary {
     duration_ms: AggregateValue,
     states: AggregateValue,
     transitions: AggregateValue,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    divergence: Option<DivergenceAggregateSummary>,
 }
 
 #[derive(Serialize)]
@@ -887,6 +891,26 @@ struct AggregateValue {
     min: Option<u64>,
     median: Option<u64>,
     max: Option<u64>,
+}
+
+#[derive(Serialize, Clone)]
+struct DivergenceRunSummary {
+    fd_nodes: Option<u64>,
+    fd_edges: Option<u64>,
+    fd_divergence_checks: Option<u64>,
+    fd_pruned_nodes: Option<u64>,
+    fd_impl_closure_max: Option<u64>,
+    fd_spec_closure_max: Option<u64>,
+}
+
+#[derive(Serialize)]
+struct DivergenceAggregateSummary {
+    fd_nodes: AggregateValue,
+    fd_edges: AggregateValue,
+    fd_divergence_checks: AggregateValue,
+    fd_pruned_nodes: AggregateValue,
+    fd_impl_closure_max: AggregateValue,
+    fd_spec_closure_max: AggregateValue,
 }
 
 fn run_problem(
@@ -1071,7 +1095,7 @@ fn build_measurement_summary(
         .iter()
         .enumerate()
         .map(|(idx, outcome)| {
-            let (duration_ms, states, transitions) =
+            let (duration_ms, states, transitions, divergence) =
                 extract_measurement_fields(&outcome.result_json);
             MeasuredRunSummary {
                 run: (idx + 1) as u32,
@@ -1080,6 +1104,7 @@ fn build_measurement_summary(
                 duration_ms,
                 states,
                 transitions,
+                divergence,
             }
         })
         .collect();
@@ -1094,6 +1119,7 @@ fn build_measurement_summary(
         .iter()
         .filter_map(|run| run.transitions)
         .collect::<Vec<_>>();
+    let divergence_aggregate = build_divergence_aggregate(&runs);
 
     MeasurementSummary {
         problem_id: problem.spec.id.clone(),
@@ -1109,6 +1135,7 @@ fn build_measurement_summary(
             duration_ms: aggregate_u64(&duration_values),
             states: aggregate_u64(&state_values),
             transitions: aggregate_u64(&transition_values),
+            divergence: divergence_aggregate,
         },
     }
 }
@@ -1141,9 +1168,14 @@ fn extract_invocation_summary(outcomes: &[RunOutcome]) -> MeasurementInvocation 
 
 fn extract_measurement_fields(
     result_json: &Option<JsonValue>,
-) -> (Option<u64>, Option<u64>, Option<u64>) {
+) -> (
+    Option<u64>,
+    Option<u64>,
+    Option<u64>,
+    Option<DivergenceRunSummary>,
+) {
     let Some(result_json) = result_json else {
-        return (None, None, None);
+        return (None, None, None, None);
     };
     let duration_ms = result_json
         .get("duration_ms")
@@ -1159,8 +1191,119 @@ fn extract_measurement_fields(
         .and_then(|metrics| metrics.get("transitions"))
         .and_then(|value| value.as_u64())
         .or_else(|| sum_check_stats(result_json, "transitions"));
+    let divergence = extract_divergence_metrics(result_json);
 
-    (duration_ms, states, transitions)
+    (duration_ms, states, transitions, divergence)
+}
+
+fn extract_divergence_metrics(result_json: &JsonValue) -> Option<DivergenceRunSummary> {
+    let summary = DivergenceRunSummary {
+        fd_nodes: extract_fd_tag_metric(result_json, "fd_nodes"),
+        fd_edges: extract_fd_tag_metric(result_json, "fd_edges"),
+        fd_divergence_checks: extract_fd_tag_metric(result_json, "fd_divergence_checks"),
+        fd_pruned_nodes: extract_fd_tag_metric(result_json, "fd_pruned_nodes"),
+        fd_impl_closure_max: extract_fd_tag_metric(result_json, "fd_impl_closure_max"),
+        fd_spec_closure_max: extract_fd_tag_metric(result_json, "fd_spec_closure_max"),
+    };
+    if summary.fd_nodes.is_none()
+        && summary.fd_edges.is_none()
+        && summary.fd_divergence_checks.is_none()
+        && summary.fd_pruned_nodes.is_none()
+        && summary.fd_impl_closure_max.is_none()
+        && summary.fd_spec_closure_max.is_none()
+    {
+        return None;
+    }
+    Some(summary)
+}
+
+fn extract_fd_tag_metric(result_json: &JsonValue, key: &str) -> Option<u64> {
+    let checks = result_json.get("checks")?.as_array()?;
+    let prefix = format!("{key}:");
+    for check in checks {
+        let Some(tags) = check
+            .get("counterexample")
+            .and_then(|value| value.get("tags"))
+            .and_then(|value| value.as_array())
+        else {
+            continue;
+        };
+        for tag in tags {
+            let Some(text) = tag.as_str() else {
+                continue;
+            };
+            let Some(value) = text.strip_prefix(&prefix) else {
+                continue;
+            };
+            let Ok(value) = value.parse::<u64>() else {
+                continue;
+            };
+            return Some(value);
+        }
+    }
+    None
+}
+
+fn build_divergence_aggregate(runs: &[MeasuredRunSummary]) -> Option<DivergenceAggregateSummary> {
+    let fd_nodes = runs
+        .iter()
+        .filter_map(|run| run.divergence.as_ref().and_then(|value| value.fd_nodes))
+        .collect::<Vec<_>>();
+    let fd_edges = runs
+        .iter()
+        .filter_map(|run| run.divergence.as_ref().and_then(|value| value.fd_edges))
+        .collect::<Vec<_>>();
+    let fd_divergence_checks = runs
+        .iter()
+        .filter_map(|run| {
+            run.divergence
+                .as_ref()
+                .and_then(|value| value.fd_divergence_checks)
+        })
+        .collect::<Vec<_>>();
+    let fd_pruned_nodes = runs
+        .iter()
+        .filter_map(|run| {
+            run.divergence
+                .as_ref()
+                .and_then(|value| value.fd_pruned_nodes)
+        })
+        .collect::<Vec<_>>();
+    let fd_impl_closure_max = runs
+        .iter()
+        .filter_map(|run| {
+            run.divergence
+                .as_ref()
+                .and_then(|value| value.fd_impl_closure_max)
+        })
+        .collect::<Vec<_>>();
+    let fd_spec_closure_max = runs
+        .iter()
+        .filter_map(|run| {
+            run.divergence
+                .as_ref()
+                .and_then(|value| value.fd_spec_closure_max)
+        })
+        .collect::<Vec<_>>();
+
+    if fd_nodes.is_empty()
+        && fd_edges.is_empty()
+        && fd_divergence_checks.is_empty()
+        && fd_pruned_nodes.is_empty()
+        && fd_impl_closure_max.is_empty()
+        && fd_spec_closure_max.is_empty()
+    {
+        return None;
+    }
+
+    Some(DivergenceAggregateSummary {
+        fd_nodes: aggregate_u64(&fd_nodes),
+        fd_edges: aggregate_u64(&fd_edges),
+        fd_divergence_checks: aggregate_u64(&fd_divergence_checks),
+        fd_pruned_nodes: aggregate_u64(&fd_pruned_nodes),
+        fd_impl_closure_max: aggregate_u64(&fd_impl_closure_max),
+        fd_spec_closure_max: aggregate_u64(&fd_spec_closure_max),
+    })
 }
 
 fn sum_check_stats(result_json: &JsonValue, key: &str) -> Option<u64> {
