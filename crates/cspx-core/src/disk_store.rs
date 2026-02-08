@@ -65,6 +65,7 @@ impl Drop for LockGuard {
 pub struct DiskStateStoreOpenOptions {
     pub lock_retry_count: u32,
     pub lock_retry_backoff: Duration,
+    pub index_flush_every: u32,
 }
 
 impl Default for DiskStateStoreOpenOptions {
@@ -72,6 +73,7 @@ impl Default for DiskStateStoreOpenOptions {
         Self {
             lock_retry_count: 0,
             lock_retry_backoff: Duration::ZERO,
+            index_flush_every: 1,
         }
     }
 }
@@ -90,10 +92,13 @@ pub struct DiskStateStoreMetrics {
     pub index_read_bytes: u64,
     pub insert_calls: u64,
     pub insert_collisions: u64,
+    pub log_write_ops: u64,
     pub log_write_ns: u64,
     pub log_write_bytes: u64,
+    pub index_write_ops: u64,
     pub index_write_ns: u64,
     pub index_write_bytes: u64,
+    pub pending_index_updates: u64,
 }
 
 impl DiskStateStoreMetrics {
@@ -111,6 +116,9 @@ where
     codec: C,
     index: HashSet<Vec<u8>>,
     metrics: DiskStateStoreMetrics,
+    index_flush_every: u32,
+    pending_index_updates: u32,
+    current_log_len: u64,
     _lock: LockGuard,
     _marker: PhantomData<S>,
 }
@@ -174,13 +182,14 @@ where
         };
 
         let index_load_start = Instant::now();
-        let index = match load_index_from_file(&paths.idx_path, &codec, log_len)? {
+        let (index, current_log_len) = match load_index_from_file(&paths.idx_path, &codec, log_len)?
+        {
             Some(index) => {
                 metrics.index_entries_loaded = usize_to_u64(index.len())?;
                 metrics.index_read_bytes = fs::metadata(&paths.idx_path)
                     .map(|metadata| metadata.len())
                     .unwrap_or_default();
-                index
+                (index, log_len)
             }
             None => {
                 metrics.log_read_bytes = log_len;
@@ -196,25 +205,58 @@ where
                 metrics.index_write_ns = metrics
                     .index_write_ns
                     .saturating_add(duration_ns(index_write_start.elapsed()));
+                metrics.index_write_ops = metrics.index_write_ops.saturating_add(1);
                 metrics.index_write_bytes = metrics.index_write_bytes.saturating_add(bytes_written);
-                rebuilt
+                (rebuilt, normalized_log_len)
             }
         };
         metrics.index_load_ns = duration_ns(index_load_start.elapsed());
         metrics.open_ns = duration_ns(open_start.elapsed());
+        metrics.pending_index_updates = 0;
 
         Ok(Self {
             paths,
             codec,
             index,
             metrics,
+            index_flush_every: options.index_flush_every.max(1),
+            pending_index_updates: 0,
+            current_log_len,
             _lock: lock,
             _marker: PhantomData,
         })
     }
 
+    fn flush_index_snapshot(&mut self) -> io::Result<()> {
+        if self.pending_index_updates == 0 {
+            return Ok(());
+        }
+        let index_write_start = Instant::now();
+        let bytes_written =
+            write_index_file(&self.paths.idx_path, &self.index, self.current_log_len)?;
+        self.metrics.index_write_ns = self
+            .metrics
+            .index_write_ns
+            .saturating_add(duration_ns(index_write_start.elapsed()));
+        self.metrics.index_write_ops = self.metrics.index_write_ops.saturating_add(1);
+        self.metrics.index_write_bytes =
+            self.metrics.index_write_bytes.saturating_add(bytes_written);
+        self.pending_index_updates = 0;
+        self.metrics.pending_index_updates = 0;
+        Ok(())
+    }
+
     pub fn metrics(&self) -> &DiskStateStoreMetrics {
         &self.metrics
+    }
+}
+
+impl<S, C> Drop for DiskStateStore<S, C>
+where
+    C: StateCodec<S>,
+{
+    fn drop(&mut self) {
+        let _ = self.flush_index_snapshot();
     }
 }
 
@@ -236,27 +278,19 @@ where
             .metrics
             .log_write_ns
             .saturating_add(duration_ns(log_write_start.elapsed()));
+        self.metrics.log_write_ops = self.metrics.log_write_ops.saturating_add(1);
         self.metrics.log_write_bytes = self
             .metrics
             .log_write_bytes
             .saturating_add(append.written_bytes);
+        self.current_log_len = append.log_len;
 
-        self.index.insert(bytes.clone());
-        let index_write_start = Instant::now();
-        let write_result = write_index_file(&self.paths.idx_path, &self.index, append.log_len);
-        self.metrics.index_write_ns = self
-            .metrics
-            .index_write_ns
-            .saturating_add(duration_ns(index_write_start.elapsed()));
-        if let Ok(bytes_written) = write_result.as_ref() {
-            self.metrics.index_write_bytes = self
-                .metrics
-                .index_write_bytes
-                .saturating_add(*bytes_written);
-        }
-        if let Err(err) = write_result {
-            self.index.remove(&bytes);
-            return Err(err);
+        self.index.insert(bytes);
+        self.pending_index_updates = self.pending_index_updates.saturating_add(1);
+        self.metrics.pending_index_updates = u64::from(self.pending_index_updates);
+
+        if self.pending_index_updates >= self.index_flush_every {
+            self.flush_index_snapshot()?;
         }
         Ok(true)
     }

@@ -1,6 +1,10 @@
 use cspx_core::state_codec::StateCodecError;
-use cspx_core::{DiskStateStore, InMemoryStateStore, StateCodec, StateStore};
+use cspx_core::{
+    DiskStateStore, DiskStateStoreMetrics, DiskStateStoreOpenOptions, InMemoryStateStore,
+    StateCodec, StateStore,
+};
 use std::error::Error;
+use std::path::Path;
 use std::time::Instant;
 
 #[derive(Debug, Clone, Copy)]
@@ -32,6 +36,19 @@ fn build_workload(unique_states: u32, repeats_per_state: u32) -> Vec<u32> {
     workload
 }
 
+fn run_disk_case(
+    workload: &[u32],
+    path: &Path,
+    options: DiskStateStoreOpenOptions,
+) -> Result<(u128, DiskStateStoreMetrics), Box<dyn Error>> {
+    let mut store = DiskStateStore::open_with_options(path, U32Codec, options)?;
+    let start = Instant::now();
+    for state in workload {
+        let _ = store.insert(*state)?;
+    }
+    Ok((start.elapsed().as_nanos(), store.metrics().clone()))
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let workload = build_workload(5_000, 3);
 
@@ -46,29 +63,85 @@ fn main() -> Result<(), Box<dyn Error>> {
     let memory_elapsed_ns = memory_start.elapsed().as_nanos();
 
     let dir = tempfile::tempdir()?;
-    let path = dir.path().join("states.log");
-    let mut disk_store = DiskStateStore::open(&path, U32Codec)?;
-    let disk_start = Instant::now();
-    for state in &workload {
-        let _ = disk_store.insert(*state)?;
-    }
-    let disk_elapsed_ns = disk_start.elapsed().as_nanos();
-    let disk_metrics = disk_store.metrics().clone();
+    let (disk_flush1_elapsed_ns, disk_flush1_metrics) = run_disk_case(
+        &workload,
+        &dir.path().join("states_flush1.log"),
+        DiskStateStoreOpenOptions {
+            index_flush_every: 1,
+            ..DiskStateStoreOpenOptions::default()
+        },
+    )?;
+    let (disk_flush256_elapsed_ns, disk_flush256_metrics) = run_disk_case(
+        &workload,
+        &dir.path().join("states_flush256.log"),
+        DiskStateStoreOpenOptions {
+            index_flush_every: 256,
+            ..DiskStateStoreOpenOptions::default()
+        },
+    )?;
 
     println!("workload_calls={}", workload.len());
     println!("workload_unique_states={}", memory_store.len());
     println!("inmemory_elapsed_ns={memory_elapsed_ns}");
     println!("inmemory_collisions={memory_collisions}");
-    println!("disk_elapsed_ns={disk_elapsed_ns}");
-    println!("disk_insert_calls={}", disk_metrics.insert_calls);
-    println!("disk_insert_collisions={}", disk_metrics.insert_collisions);
-    println!("disk_log_write_bytes={}", disk_metrics.log_write_bytes);
-    println!("disk_index_write_bytes={}", disk_metrics.index_write_bytes);
+    println!("disk_flush1_elapsed_ns={disk_flush1_elapsed_ns}");
     println!(
-        "disk_total_write_bytes={}",
-        disk_metrics.total_written_bytes()
+        "disk_flush1_insert_calls={}",
+        disk_flush1_metrics.insert_calls
     );
-    println!("disk_lock_wait_ns={}", disk_metrics.lock_wait_ns);
+    println!(
+        "disk_flush1_insert_collisions={}",
+        disk_flush1_metrics.insert_collisions
+    );
+    println!(
+        "disk_flush1_log_write_bytes={}",
+        disk_flush1_metrics.log_write_bytes
+    );
+    println!(
+        "disk_flush1_index_write_bytes={}",
+        disk_flush1_metrics.index_write_bytes
+    );
+    println!(
+        "disk_flush1_index_write_ops={}",
+        disk_flush1_metrics.index_write_ops
+    );
+    println!(
+        "disk_flush1_total_write_bytes={}",
+        disk_flush1_metrics.total_written_bytes()
+    );
+    println!(
+        "disk_flush1_lock_wait_ns={}",
+        disk_flush1_metrics.lock_wait_ns
+    );
+    println!("disk_flush256_elapsed_ns={disk_flush256_elapsed_ns}");
+    println!(
+        "disk_flush256_insert_calls={}",
+        disk_flush256_metrics.insert_calls
+    );
+    println!(
+        "disk_flush256_insert_collisions={}",
+        disk_flush256_metrics.insert_collisions
+    );
+    println!(
+        "disk_flush256_log_write_bytes={}",
+        disk_flush256_metrics.log_write_bytes
+    );
+    println!(
+        "disk_flush256_index_write_bytes={}",
+        disk_flush256_metrics.index_write_bytes
+    );
+    println!(
+        "disk_flush256_index_write_ops={}",
+        disk_flush256_metrics.index_write_ops
+    );
+    println!(
+        "disk_flush256_total_write_bytes={}",
+        disk_flush256_metrics.total_written_bytes()
+    );
+    println!(
+        "disk_flush256_lock_wait_ns={}",
+        disk_flush256_metrics.lock_wait_ns
+    );
 
     Ok(())
 }

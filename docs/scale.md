@@ -61,10 +61,26 @@
 - `index_load_ns`, `index_rebuild_ns`, `index_entries_loaded`, `index_entries_rebuilt`
 - `log_read_bytes`, `index_read_bytes`
 - `insert_calls`, `insert_collisions`
-- `log_write_ns`, `log_write_bytes`, `index_write_ns`, `index_write_bytes`
+- `log_write_ops`, `log_write_ns`, `log_write_bytes`
+- `index_write_ops`, `index_write_ns`, `index_write_bytes`, `pending_index_updates`
 
 代表負荷の取得は `cargo run -q -p cspx-core --example store_profile_compare` を使用する。
 同一ワークロードで `InMemoryStateStore` と `DiskStateStore` を比較し、WS5-B の最適化優先順位（I/O vs 衝突 vs lock）を判断する。
+
+### WS5-B 最小実装（v0.2）
+- `DiskStateStoreOpenOptions.index_flush_every` を追加し、外部 index のバッチ更新を有効化する（default: `1`）。
+- `insert` は log 追記を都度実行し、idx は `index_flush_every` 件ごとに flush する。
+- `Drop` 時に pending idx を best-effort で flush し、再起動時は `log_len` 照合で整合を担保する。
+- `HybridStateStore` を追加し、`spill_threshold` 超過時に memory 優先から disk spill へ移行する最小ポリシーを提供する。
+- 代表負荷（`store_profile_compare`）では `index_flush_every=1` と比較して `index_flush_every=256` で次を確認した。
+  - `disk_elapsed_ns`: `39,710,867,729` -> `197,141,492`
+  - `index_write_ops`: `5,001` -> `20`
+  - `index_write_bytes`: `112,686,295` -> `438,412`
+
+### IF 境界（将来外部KV差し替え）
+- 探索エンジン境界: `StateStore<S>` trait（`insert`/`len`）。
+- 永続化境界: `StateCodec<S>`（state のエンコード/デコード互換を固定）。
+- backend 依存境界: `DiskStateStoreOpenOptions` / `HybridStateStoreOptions` に集約し、探索側ロジックを変更せず backend を差し替え可能にする。
 
 ### v0.3+ 要件（高度化）
 現行 v0.2 実装（lock file 排他、hex index）を踏まえ、将来の高度化要件を以下に示す。
