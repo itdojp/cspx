@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "0 3 * * *"
   workflow_dispatch:
+    inputs:
+      update_baseline_candidate:
+        description: "Generate baseline candidate JSON artifact from current run"
+        required: false
+        type: boolean
+        default: false
 
 concurrency:
   group: bench-${{ github.ref }}
@@ -13,6 +19,11 @@ jobs:
   bench:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
+    env:
+      BENCH_BASELINE_FILE: benchmarks/baseline/bench-metrics-baseline.json
+      BENCH_WARN_THRESHOLD_PCT: "20"
+      BENCH_FAIL_THRESHOLD_PCT: "40"
+      BENCH_MIN_BASELINE_MS: "100"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -26,7 +37,11 @@ jobs:
           mkdir -p artifacts/bench
           mkdir -p problems/.out
           set +e
-          scripts/run-problems --suite bench --cspx target/release/cspx | tee artifacts/bench/run.log
+          scripts/run-problems \
+            --suite bench \
+            --measure-runs 5 \
+            --warmup-runs 1 \
+            --cspx target/release/cspx | tee artifacts/bench/run.log
           rc=$?
           set -e
 
@@ -54,7 +69,7 @@ jobs:
             echo "- pass: ${pass}"
             echo "- fail: ${fail}"
             echo "- metrics_summary_files: ${metrics_count}"
-            echo "- policy: bench suite default run"
+            echo "- policy: bench suite measure-runs=5 warmup-runs=1"
           } >> "$GITHUB_STEP_SUMMARY"
 
           if [ "${rc}" -eq 2 ]; then
@@ -66,6 +81,44 @@ jobs:
             echo "Unexpected non-zero exit code from scripts/run-problems: ${rc}" >&2
             exit "${rc}"
           fi
+      - name: Compare bench baseline
+        id: baseline
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/bench
+          set +e
+          scripts/bench-baseline compare \
+            --out-dir problems/.out \
+            --baseline "${BENCH_BASELINE_FILE}" \
+            --report-json artifacts/bench/baseline-compare.json \
+            --report-md artifacts/bench/baseline-compare.md \
+            --warn-threshold-pct "${BENCH_WARN_THRESHOLD_PCT}" \
+            --fail-threshold-pct "${BENCH_FAIL_THRESHOLD_PCT}" \
+            --min-baseline-ms "${BENCH_MIN_BASELINE_MS}"
+          rc=$?
+          set -e
+          echo "compare_exit_code=${rc}" >> "$GITHUB_OUTPUT"
+          cat artifacts/bench/baseline-compare.md >> "$GITHUB_STEP_SUMMARY"
+          if [ "${rc}" -ne 0 ]; then
+            echo "bench baseline comparison failed" >&2
+            exit "${rc}"
+          fi
+      - name: Write baseline candidate artifact
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.update_baseline_candidate }}
+        run: |
+          set -euo pipefail
+          scripts/bench-baseline write \
+            --out-dir problems/.out \
+            --baseline artifacts/bench/bench-metrics-baseline.candidate.json \
+            --warn-threshold-pct "${BENCH_WARN_THRESHOLD_PCT}" \
+            --fail-threshold-pct "${BENCH_FAIL_THRESHOLD_PCT}" \
+            --min-baseline-ms "${BENCH_MIN_BASELINE_MS}"
+          {
+            echo ""
+            echo "### Baseline Candidate"
+            echo "- artifact: artifacts/bench/bench-metrics-baseline.candidate.json"
+            echo "- apply: replace benchmarks/baseline/bench-metrics-baseline.json in a PR"
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload bench artifacts
         if: always()
         uses: actions/upload-artifact@v4

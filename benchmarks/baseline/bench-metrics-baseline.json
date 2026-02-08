@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "suite": "bench",
+  "generated_at": "1970-01-01T00:00:00Z",
+  "source_commit": null,
+  "note": "bootstrap placeholder; update via workflow_dispatch update_baseline_candidate=true",
+  "thresholds": {
+    "warn_pct": 20,
+    "fail_pct": 40,
+    "min_baseline_ms": 100
+  },
+  "problems": {}
+}

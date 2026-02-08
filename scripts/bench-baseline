@@ -1,0 +1,316 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  scripts/bench-baseline <write|compare> [options]
+
+Options:
+  --out-dir <path>             Metrics root (default: problems/.out)
+  --baseline <path>            Baseline JSON path
+                               (default: benchmarks/baseline/bench-metrics-baseline.json)
+  --report-json <path>         Compare report JSON output path
+                               (default: artifacts/bench/baseline-compare.json)
+  --report-md <path>           Compare markdown summary output path
+                               (default: artifacts/bench/baseline-compare.md)
+  --warn-threshold-pct <num>   Warn threshold for regression percentage (default: 20)
+  --fail-threshold-pct <num>   Fail threshold for regression percentage (default: 40)
+  --min-baseline-ms <num>      Ignore compare when baseline duration is below this value (default: 100)
+  -h, --help                   Show this help
+
+Modes:
+  write    Build baseline JSON from current metrics-summary.json files.
+  compare  Compare current metrics against baseline and return non-zero on fail threshold.
+EOF
+}
+
+die() {
+  echo "error: $*" >&2
+  exit 2
+}
+
+require_command() {
+  local command_name="$1"
+  if ! command -v "${command_name}" >/dev/null 2>&1; then
+    die "required command not found: ${command_name}"
+  fi
+}
+
+is_number() {
+  [[ "$1" =~ ^[0-9]+([.][0-9]+)?$ ]]
+}
+
+MODE=""
+OUT_DIR="problems/.out"
+BASELINE_FILE="benchmarks/baseline/bench-metrics-baseline.json"
+REPORT_JSON="artifacts/bench/baseline-compare.json"
+REPORT_MD="artifacts/bench/baseline-compare.md"
+WARN_THRESHOLD_PCT="20"
+FAIL_THRESHOLD_PCT="40"
+MIN_BASELINE_MS="100"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    write|compare)
+      MODE="$1"
+      shift
+      ;;
+    --out-dir)
+      OUT_DIR="${2:-}"
+      shift 2
+      ;;
+    --baseline)
+      BASELINE_FILE="${2:-}"
+      shift 2
+      ;;
+    --report-json)
+      REPORT_JSON="${2:-}"
+      shift 2
+      ;;
+    --report-md)
+      REPORT_MD="${2:-}"
+      shift 2
+      ;;
+    --warn-threshold-pct)
+      WARN_THRESHOLD_PCT="${2:-}"
+      shift 2
+      ;;
+    --fail-threshold-pct)
+      FAIL_THRESHOLD_PCT="${2:-}"
+      shift 2
+      ;;
+    --min-baseline-ms)
+      MIN_BASELINE_MS="${2:-}"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      die "unknown argument: $1"
+      ;;
+  esac
+done
+
+[[ -n "${MODE}" ]] || die "mode is required (write|compare)"
+[[ -n "${OUT_DIR}" ]] || die "--out-dir must not be empty"
+[[ -n "${BASELINE_FILE}" ]] || die "--baseline must not be empty"
+[[ -n "${REPORT_JSON}" ]] || die "--report-json must not be empty"
+[[ -n "${REPORT_MD}" ]] || die "--report-md must not be empty"
+
+is_number "${WARN_THRESHOLD_PCT}" || die "--warn-threshold-pct must be numeric"
+is_number "${FAIL_THRESHOLD_PCT}" || die "--fail-threshold-pct must be numeric"
+is_number "${MIN_BASELINE_MS}" || die "--min-baseline-ms must be numeric"
+
+require_command find
+require_command jq
+
+if ! jq -n \
+  --argjson warn "${WARN_THRESHOLD_PCT}" \
+  --argjson fail "${FAIL_THRESHOLD_PCT}" \
+  '$fail > $warn' >/dev/null; then
+  die "--fail-threshold-pct must be greater than --warn-threshold-pct"
+fi
+
+[[ -d "${OUT_DIR}" ]] || die "metrics directory not found: ${OUT_DIR}"
+
+mapfile -t METRIC_FILES < <(find "${OUT_DIR}" -mindepth 2 -maxdepth 2 -name metrics-summary.json | sort)
+[[ ${#METRIC_FILES[@]} -gt 0 ]] || die "no metrics-summary.json found under: ${OUT_DIR}"
+
+CURRENT_JSON="$(
+  jq -s \
+    --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+    {
+      schema_version: 1,
+      suite: "bench",
+      generated_at: $generated_at,
+      problems: (
+        map({
+          key: .problem_id,
+          value: {
+            duration_ms_median: .aggregate.duration_ms.median,
+            states_median: .aggregate.states.median,
+            transitions_median: .aggregate.transitions.median,
+            measured_runs: .measured_runs
+          }
+        })
+        | from_entries
+      )
+    }' "${METRIC_FILES[@]}"
+)"
+
+if [[ "${MODE}" == "write" ]]; then
+  mkdir -p "$(dirname "${BASELINE_FILE}")"
+  jq -n \
+    --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    --arg source_commit "${GITHUB_SHA:-}" \
+    --argjson warn "${WARN_THRESHOLD_PCT}" \
+    --argjson fail "${FAIL_THRESHOLD_PCT}" \
+    --argjson min_baseline_ms "${MIN_BASELINE_MS}" \
+    --argjson current "${CURRENT_JSON}" '
+    {
+      schema_version: 1,
+      suite: "bench",
+      generated_at: $generated_at,
+      source_commit: (if $source_commit == "" then null else $source_commit end),
+      thresholds: {
+        warn_pct: $warn,
+        fail_pct: $fail,
+        min_baseline_ms: $min_baseline_ms
+      },
+      problems: ($current.problems // {})
+    }' > "${BASELINE_FILE}"
+  echo "baseline written: ${BASELINE_FILE}"
+  exit 0
+fi
+
+mkdir -p "$(dirname "${REPORT_JSON}")"
+mkdir -p "$(dirname "${REPORT_MD}")"
+
+if [[ ! -f "${BASELINE_FILE}" ]]; then
+  jq -n \
+    --arg baseline_file "${BASELINE_FILE}" \
+    --argjson warn "${WARN_THRESHOLD_PCT}" \
+    --argjson fail "${FAIL_THRESHOLD_PCT}" \
+    --argjson min_baseline_ms "${MIN_BASELINE_MS}" \
+    --argjson current "${CURRENT_JSON}" '
+    {
+      schema_version: 1,
+      mode: "compare",
+      compared_at: (now | todateiso8601),
+      baseline_file: $baseline_file,
+      thresholds: {
+        warn_pct: $warn,
+        fail_pct: $fail,
+        min_baseline_ms: $min_baseline_ms
+      },
+      totals: {
+        problems: (($current.problems // {}) | keys | length),
+        ok: 0,
+        warn: 0,
+        fail: 0,
+        skipped: 0,
+        new_problem: (($current.problems // {}) | keys | length)
+      },
+      results: (
+        ($current.problems // {})
+        | to_entries
+        | sort_by(.key)
+        | map({
+            problem_id: .key,
+            baseline_duration_ms: null,
+            current_duration_ms: .value.duration_ms_median,
+            delta_pct: null,
+            status: "new_problem",
+            reason: "baseline file not found",
+            baseline_measured_runs: null,
+            current_measured_runs: .value.measured_runs
+          })
+      )
+    }' > "${REPORT_JSON}"
+else
+  jq -n \
+    --arg baseline_file "${BASELINE_FILE}" \
+    --argjson warn "${WARN_THRESHOLD_PCT}" \
+    --argjson fail "${FAIL_THRESHOLD_PCT}" \
+    --argjson min_baseline_ms "${MIN_BASELINE_MS}" \
+    --slurpfile baseline "${BASELINE_FILE}" \
+    --argjson current "${CURRENT_JSON}" '
+    def classify($base; $current; $warn; $fail; $min_baseline_ms):
+      if $base == null then
+        {status: "new_problem", reason: "missing baseline metric"}
+      elif $current == null then
+        {status: "fail", reason: "missing current metric"}
+      elif ($base | type) != "number" or ($current | type) != "number" then
+        {status: "skipped", reason: "non numeric metric"}
+      elif $base < $min_baseline_ms then
+        {status: "skipped", reason: ("baseline below min_baseline_ms (" + ($min_baseline_ms | tostring) + "ms)")}
+      else
+        (($current - $base) / $base * 100.0) as $delta
+        | if $delta >= $fail then
+            {status: "fail", delta_pct: $delta}
+          elif $delta >= $warn then
+            {status: "warn", delta_pct: $delta}
+          else
+            {status: "ok", delta_pct: $delta}
+          end
+      end;
+    ($baseline[0].problems // {}) as $baseline_problems
+    | ($current.problems // {}) as $current_problems
+    | (($baseline_problems | keys_unsorted) + ($current_problems | keys_unsorted) | unique | sort) as $ids
+    | {
+        schema_version: 1,
+        mode: "compare",
+        compared_at: (now | todateiso8601),
+        baseline_file: $baseline_file,
+        thresholds: {
+          warn_pct: $warn,
+          fail_pct: $fail,
+          min_baseline_ms: $min_baseline_ms
+        },
+        results: [
+          $ids[] as $id
+          | ($baseline_problems[$id].duration_ms_median // null) as $base_duration_ms
+          | ($current_problems[$id].duration_ms_median // null) as $current_duration_ms
+          | (classify($base_duration_ms; $current_duration_ms; $warn; $fail; $min_baseline_ms)) as $judge
+          | {
+              problem_id: $id,
+              baseline_duration_ms: $base_duration_ms,
+              current_duration_ms: $current_duration_ms,
+              delta_pct: ($judge.delta_pct // null),
+              status: $judge.status,
+              reason: ($judge.reason // null),
+              baseline_measured_runs: ($baseline_problems[$id].measured_runs // null),
+              current_measured_runs: ($current_problems[$id].measured_runs // null)
+            }
+        ]
+      }
+    | .totals = {
+        problems: (.results | length),
+        ok: ([.results[] | select(.status == "ok")] | length),
+        warn: ([.results[] | select(.status == "warn")] | length),
+        fail: ([.results[] | select(.status == "fail")] | length),
+        skipped: ([.results[] | select(.status == "skipped")] | length),
+        new_problem: ([.results[] | select(.status == "new_problem")] | length)
+      }' > "${REPORT_JSON}"
+fi
+
+jq -r '
+  def fmt($v):
+    if $v == null then "-" else ($v | tostring) end;
+  def fmt_delta($v):
+    if $v == null then "-"
+    else (((($v * 100.0) | round) / 100.0) | tostring)
+    end;
+  [
+    "## Bench Baseline Compare",
+    "- baseline_file: `" + .baseline_file + "`",
+    "- thresholds: warn >= " + (.thresholds.warn_pct | tostring) + "%, fail >= " + (.thresholds.fail_pct | tostring) + "%, min_baseline_ms >= " + (.thresholds.min_baseline_ms | tostring),
+    "- totals: problems=" + (.totals.problems | tostring) + ", ok=" + (.totals.ok | tostring) + ", warn=" + (.totals.warn | tostring) + ", fail=" + (.totals.fail | tostring) + ", skipped=" + (.totals.skipped | tostring) + ", new_problem=" + (.totals.new_problem | tostring),
+    "",
+    "| problem_id | baseline_ms | current_ms | delta_pct | status | note |",
+    "| --- | ---: | ---: | ---: | --- | --- |"
+  ] + (
+    .results
+    | map(
+        "| " + .problem_id
+        + " | " + fmt(.baseline_duration_ms)
+        + " | " + fmt(.current_duration_ms)
+        + " | " + fmt_delta(.delta_pct)
+        + " | " + .status
+        + " | " + fmt(.reason)
+        + " |"
+      )
+  )
+  | .[]' "${REPORT_JSON}" > "${REPORT_MD}"
+
+cat "${REPORT_MD}"
+
+FAIL_COUNT="$(jq -r '.totals.fail' "${REPORT_JSON}")"
+if [[ "${FAIL_COUNT}" != "0" ]]; then
+  exit 1
+fi
+
+exit 0

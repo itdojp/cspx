@@ -138,3 +138,31 @@ deterministic mode は「スケジュールに依存しない探索順」を仕�
 - 判定は正規化 JSON の同一性で行う。
   - 既定除外: `started_at`, `finished_at`, `duration_ms`, `tool.git_sha` に加え、`metrics` の時間依存項目。
 - 不一致時は `report.txt` を `FAIL` とし、run 間差分があることを明示する。
+
+## baseline 比較と閾値判定（WS3-B / v0.2）
+### 目的
+- bench 実行結果を baseline と比較し、性能劣化を `warn/fail` で機械判定する。
+- 判定根拠（baseline値、current値、劣化率）を CI 出力に残す。
+
+### 判定仕様
+- 比較対象: `metrics-summary.json` の `aggregate.duration_ms.median`
+- 劣化率: `delta_pct = ((current - baseline) / baseline) * 100`
+- 既定閾値:
+  - `warn_threshold_pct = 20`
+  - `fail_threshold_pct = 40`
+  - `min_baseline_ms = 100`（baseline が短すぎる問題は `skipped`）
+
+### CI 反映
+- `.github/workflows/bench.yml` で `scripts/bench-baseline compare` を実行する。
+- `fail` が 1 件以上なら workflow を失敗させる。
+- `warn` は失敗にしないが、`GITHUB_STEP_SUMMARY` と artifact に記録する。
+
+### 過検知抑制ルール
+- bench 計測は `--measure-runs 5 --warmup-runs 1` を既定とする。
+- baseline 未定義の問題は `new_problem` として扱い、fail にしない。
+- 非数値/欠損メトリクスは `skipped` とし、即時failにしない。
+
+### baseline 更新
+- baseline は `benchmarks/baseline/bench-metrics-baseline.json` を repo 管理とする。
+- workflow_dispatch の `update_baseline_candidate=true` で候補 JSON を artifact 出力し、PR で更新する。
+- 詳細運用は `docs/bench-baseline.md` を参照。
