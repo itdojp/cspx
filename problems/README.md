@@ -49,6 +49,8 @@ scripts/run-problems --cspx target/debug/cspx --only-dir problems/P000_hello_typ
 - `--suite fast|bench`: suite フィルタ（デフォルト: `fast`）
 - `--cspx <path>`: `run.cmd[0] == "cspx"` の場合に `cspx` 実体を差し替える（例: `target/debug/cspx`）
 - `--jobs <n>`: 並列実行（問題単位、出力順は ID 昇順で安定化）
+- `--measure-runs <n>`: 問題ごとの測定 run 回数（デフォルト: `1`）
+- `--warmup-runs <n>`: 測定前のウォームアップ run 回数（デフォルト: `0`）
 
 ## suite 運用規約（fast / bench）
 ### 目的
@@ -106,6 +108,7 @@ scripts/run-problems --suite fast --cspx target/debug/cspx
 - `problems/.out/<P###>/run-<N>/exit_code.txt`: プロセスの exit code
 - `problems/.out/<P###>/run-<N>/result.json`: stdout を JSON として parse できた場合の整形出力
 - `problems/.out/<P###>/run-<N>/normalized.json`: `compare` 用に正規化した JSON
+- `problems/.out/<P###>/metrics-summary.json`: 測定メタデータと集計（median/min/max）
 
 `result.json` が無い場合は stdout が JSON でない（または空）ことを示す。
 `expect.yaml` で `status` / `checks` を期待する場合、stdout が Result JSON（`--format json`）である必要がある。
@@ -135,6 +138,8 @@ checks:
 
 - `repeat`: `expect.yaml` を優先し、未指定の場合は `problem.yaml` の `run.repeat`、それも無ければ `1`
 - `compare.kind: normalized_json_equal`: `normalized.json` を run 間で比較する
+- CLI の `--measure-runs` は上記 `repeat` と比較して大きい方を採用する
+- 測定 run が 2 回以上あり、かつ全ての run で `invocation.deterministic=true` の場合、runner は正規化 JSON の同一性を追加検証する
 
 正規化（`normalized.json`）では以下のフィールドを常に除外する。
 - `started_at`
@@ -161,6 +166,12 @@ compare:
 2) `stdout.txt` / `stderr.txt` / `exit_code.txt` を確認する  
 3) stdout が JSON でない場合は `problem.yaml` の `run.cmd` が `--format json` を指定しているか確認する  
 4) CI では failure artifact（`problems-out`）をダウンロードして同様に確認する
+
+## bench 計測ポリシー（#114）
+- 集計は **median** を基準値とし、`metrics-summary.json` に `min/median/max` を保存する
+- 外れ値の自動除外は行わない（`outlier_policy=none` を明示）
+- ノイズ確認は同一条件（入力・`--cspx`・`--jobs`・`--measure-runs`・`--warmup-runs`）で比較する
+- 例: `scripts/run-problems --suite bench --measure-runs 5 --warmup-runs 1 --cspx target/debug/cspx`
 
 ## ディレクトリ規約
 - 1問題 = 1ディレクトリ: `problems/P###_<slug>/`

@@ -4,7 +4,7 @@ use jsonschema::JSONSchema;
 use rayon::prelude::*;
 use rayon::ThreadPoolBuilder;
 use regex::Regex;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -34,6 +34,10 @@ struct Args {
     cspx: Option<PathBuf>,
     #[arg(long, default_value_t = 1)]
     jobs: usize,
+    #[arg(long, default_value_t = 1)]
+    measure_runs: u32,
+    #[arg(long, default_value_t = 0)]
+    warmup_runs: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -136,6 +140,9 @@ fn main() -> Result<()> {
     let args = Args::parse();
     if args.jobs == 0 {
         anyhow::bail!("--jobs must be >= 1");
+    }
+    if args.measure_runs == 0 {
+        anyhow::bail!("--measure-runs must be >= 1");
     }
 
     let root = std::env::current_dir().context("current dir")?;
@@ -830,6 +837,58 @@ fn remove_path_recursive(value: &mut JsonValue, parts: &[&str]) {
     }
 }
 
+#[derive(Serialize)]
+struct MeasurementSummary {
+    problem_id: String,
+    suite: String,
+    warmup_runs: u32,
+    measured_runs: u32,
+    aggregation: String,
+    outlier_policy: String,
+    invocation: MeasurementInvocation,
+    deterministic_check: DeterministicCheckSummary,
+    runs: Vec<MeasuredRunSummary>,
+    aggregate: MeasurementAggregateSummary,
+}
+
+#[derive(Serialize)]
+struct MeasurementInvocation {
+    threads: Option<u64>,
+    deterministic: Option<bool>,
+    seed: Option<u64>,
+}
+
+#[derive(Serialize)]
+struct DeterministicCheckSummary {
+    evaluated: bool,
+    passed: Option<bool>,
+    reason: Option<String>,
+}
+
+#[derive(Serialize)]
+struct MeasuredRunSummary {
+    run: u32,
+    exit_code: i32,
+    status: Option<String>,
+    duration_ms: Option<u64>,
+    states: Option<u64>,
+    transitions: Option<u64>,
+}
+
+#[derive(Serialize)]
+struct MeasurementAggregateSummary {
+    duration_ms: AggregateValue,
+    states: AggregateValue,
+    transitions: AggregateValue,
+}
+
+#[derive(Serialize)]
+struct AggregateValue {
+    min: Option<u64>,
+    median: Option<u64>,
+    max: Option<u64>,
+}
+
 fn run_problem(
     out_root: &Path,
     problem: &Problem,
@@ -839,7 +898,8 @@ fn run_problem(
 ) -> Result<ProblemResult> {
     let expect = load_expect(problem, expect_schema)?;
     let run = &problem.spec.run;
-    let repeat = expect.repeat.or(run.repeat).unwrap_or(1);
+    let base_repeat = expect.repeat.or(run.repeat).unwrap_or(1);
+    let repeat = base_repeat.max(args.measure_runs);
     if let (Some(expect_repeat), Some(run_repeat)) = (expect.repeat, run.repeat) {
         if expect_repeat != run_repeat {
             eprintln!(
@@ -855,6 +915,15 @@ fn run_problem(
         .unwrap_or_default();
 
     let mut outcomes = Vec::new();
+    for idx in 1..=args.warmup_runs {
+        let outcome = execute_run(problem, args)?;
+        let status = outcome.result_status.as_deref().unwrap_or("unknown");
+        logs.push(format!(
+            "WARMUP {} run={} exit={} status={}",
+            problem.spec.id, idx, outcome.exit_code, status
+        ));
+    }
+
     for idx in 1..=repeat {
         let out_dir = out_root.join(&problem.spec.id).join(format!("run-{}", idx));
         fs::create_dir_all(&out_dir).with_context(|| format!("create {}", out_dir.display()))?;
@@ -887,6 +956,15 @@ fn run_problem(
         errors.extend(evaluate_run(&expect, outcome, idx + 1));
     }
     errors.extend(evaluate_compare(&expect, &outcomes, &problem.spec.id));
+    let (deterministic_summary, deterministic_errors) =
+        evaluate_deterministic_consistency(&outcomes, &compare_ignore);
+    errors.extend(deterministic_errors);
+
+    let summary =
+        build_measurement_summary(problem, args, repeat, &outcomes, deterministic_summary);
+    let summary_path = out_root.join(&problem.spec.id).join("metrics-summary.json");
+    fs::write(&summary_path, serde_json::to_vec_pretty(&summary)?)
+        .with_context(|| format!("write {}", summary_path.display()))?;
 
     let report_path = out_root.join(&problem.spec.id).join("report.txt");
     if errors.is_empty() {
@@ -902,6 +980,224 @@ fn run_problem(
         ));
         Ok(ProblemResult::Fail)
     }
+}
+
+fn evaluate_deterministic_consistency(
+    outcomes: &[RunOutcome],
+    compare_ignore: &[String],
+) -> (DeterministicCheckSummary, Vec<String>) {
+    if outcomes.len() < 2 {
+        return (
+            DeterministicCheckSummary {
+                evaluated: false,
+                passed: None,
+                reason: Some("measured runs < 2".to_string()),
+            },
+            Vec::new(),
+        );
+    }
+
+    let result_jsons: Option<Vec<&JsonValue>> = outcomes
+        .iter()
+        .map(|outcome| outcome.result_json.as_ref())
+        .collect();
+    let Some(result_jsons) = result_jsons else {
+        return (
+            DeterministicCheckSummary {
+                evaluated: false,
+                passed: None,
+                reason: Some("some runs do not have result JSON".to_string()),
+            },
+            Vec::new(),
+        );
+    };
+
+    let all_deterministic = result_jsons.iter().all(|json| {
+        json.get("invocation")
+            .and_then(|value| value.get("deterministic"))
+            .and_then(|value| value.as_bool())
+            == Some(true)
+    });
+    if !all_deterministic {
+        return (
+            DeterministicCheckSummary {
+                evaluated: false,
+                passed: None,
+                reason: Some("invocation.deterministic is not true for all runs".to_string()),
+            },
+            Vec::new(),
+        );
+    }
+
+    let normalized: Vec<JsonValue> = result_jsons
+        .iter()
+        .map(|json| normalize_json((*json).clone(), compare_ignore))
+        .collect();
+    let first = &normalized[0];
+    for (idx, value) in normalized.iter().enumerate().skip(1) {
+        if value != first {
+            return (
+                DeterministicCheckSummary {
+                    evaluated: true,
+                    passed: Some(false),
+                    reason: Some(format!("mismatch between run 1 and run {}", idx + 1)),
+                },
+                vec![format!(
+                    "deterministic consistency mismatch (run 1 vs run {})",
+                    idx + 1
+                )],
+            );
+        }
+    }
+
+    (
+        DeterministicCheckSummary {
+            evaluated: true,
+            passed: Some(true),
+            reason: None,
+        },
+        Vec::new(),
+    )
+}
+
+fn build_measurement_summary(
+    problem: &Problem,
+    args: &Args,
+    repeat: u32,
+    outcomes: &[RunOutcome],
+    deterministic_check: DeterministicCheckSummary,
+) -> MeasurementSummary {
+    let runs: Vec<MeasuredRunSummary> = outcomes
+        .iter()
+        .enumerate()
+        .map(|(idx, outcome)| {
+            let (duration_ms, states, transitions) =
+                extract_measurement_fields(&outcome.result_json);
+            MeasuredRunSummary {
+                run: (idx + 1) as u32,
+                exit_code: outcome.exit_code,
+                status: outcome.result_status.clone(),
+                duration_ms,
+                states,
+                transitions,
+            }
+        })
+        .collect();
+
+    let invocation = extract_invocation_summary(outcomes);
+    let duration_values = runs
+        .iter()
+        .filter_map(|run| run.duration_ms)
+        .collect::<Vec<_>>();
+    let state_values = runs.iter().filter_map(|run| run.states).collect::<Vec<_>>();
+    let transition_values = runs
+        .iter()
+        .filter_map(|run| run.transitions)
+        .collect::<Vec<_>>();
+
+    MeasurementSummary {
+        problem_id: problem.spec.id.clone(),
+        suite: effective_suite(&problem.spec).to_string(),
+        warmup_runs: args.warmup_runs,
+        measured_runs: repeat,
+        aggregation: "median".to_string(),
+        outlier_policy: "none".to_string(),
+        invocation,
+        deterministic_check,
+        runs,
+        aggregate: MeasurementAggregateSummary {
+            duration_ms: aggregate_u64(&duration_values),
+            states: aggregate_u64(&state_values),
+            transitions: aggregate_u64(&transition_values),
+        },
+    }
+}
+
+fn extract_invocation_summary(outcomes: &[RunOutcome]) -> MeasurementInvocation {
+    let Some(first_json) = outcomes
+        .first()
+        .and_then(|outcome| outcome.result_json.as_ref())
+    else {
+        return MeasurementInvocation {
+            threads: None,
+            deterministic: None,
+            seed: None,
+        };
+    };
+
+    let invocation = first_json.get("invocation");
+    MeasurementInvocation {
+        threads: invocation
+            .and_then(|value| value.get("parallel"))
+            .and_then(|value| value.as_u64()),
+        deterministic: invocation
+            .and_then(|value| value.get("deterministic"))
+            .and_then(|value| value.as_bool()),
+        seed: invocation
+            .and_then(|value| value.get("seed"))
+            .and_then(|value| value.as_u64()),
+    }
+}
+
+fn extract_measurement_fields(
+    result_json: &Option<JsonValue>,
+) -> (Option<u64>, Option<u64>, Option<u64>) {
+    let Some(result_json) = result_json else {
+        return (None, None, None);
+    };
+    let duration_ms = result_json
+        .get("duration_ms")
+        .and_then(|value| value.as_u64());
+
+    let states = result_json
+        .get("metrics")
+        .and_then(|metrics| metrics.get("states"))
+        .and_then(|value| value.as_u64())
+        .or_else(|| sum_check_stats(result_json, "states"));
+    let transitions = result_json
+        .get("metrics")
+        .and_then(|metrics| metrics.get("transitions"))
+        .and_then(|value| value.as_u64())
+        .or_else(|| sum_check_stats(result_json, "transitions"));
+
+    (duration_ms, states, transitions)
+}
+
+fn sum_check_stats(result_json: &JsonValue, key: &str) -> Option<u64> {
+    let checks = result_json.get("checks")?.as_array()?;
+    let mut total = 0_u64;
+    for check in checks {
+        let value = check
+            .get("stats")
+            .and_then(|stats| stats.get(key))
+            .and_then(|value| value.as_u64())?;
+        total = total.saturating_add(value);
+    }
+    Some(total)
+}
+
+fn aggregate_u64(values: &[u64]) -> AggregateValue {
+    if values.is_empty() {
+        return AggregateValue {
+            min: None,
+            median: None,
+            max: None,
+        };
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_unstable();
+    let min = sorted.first().copied();
+    let max = sorted.last().copied();
+    let median = if sorted.len() % 2 == 1 {
+        Some(sorted[sorted.len() / 2])
+    } else {
+        let upper = sorted.len() / 2;
+        let lower = upper - 1;
+        let sum = sorted[lower] as u128 + sorted[upper] as u128;
+        Some((sum / 2) as u64)
+    };
+
+    AggregateValue { min, median, max }
 }
 
 struct RunOutcome {
