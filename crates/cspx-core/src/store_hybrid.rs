@@ -102,11 +102,9 @@ where
         let should_spill = self.in_memory.len() > self.options.spill_threshold;
         let had_spill = self.spill_store.is_some();
         self.activate_spill_if_needed()?;
-        if should_spill {
-            if had_spill {
-                if let Some(spill_store) = self.spill_store.as_mut() {
-                    let _ = spill_store.insert(state)?;
-                }
+        if should_spill && had_spill {
+            if let Some(spill_store) = self.spill_store.as_mut() {
+                let _ = spill_store.insert(state)?;
             }
         }
         Ok(true)
