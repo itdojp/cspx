@@ -199,6 +199,7 @@ deterministic mode は「スケジュールに依存しない探索順」を仕�
 ### 効果測定（7-run median）
 - 再現コマンド: `cargo run -q -p cspx-core --example explore_hotspot_bench`
 - 比較条件: baseline=`b3a8c39`（WS4-A） vs WS4-B 実装後、同一マシン・同一オプション。
+- 注記: 以下は `explore_hotspot_bench` の標準出力（`*_ns`）であり、Result JSON の `metrics.explore_hotspots` は `*_ms` で出力する。
 - `state_generation_ns`: `25,466,309` -> `21,203,640`（`-16.74%`）
 - `frontier_maintenance_ns`: `22,786,045` -> `16,784,140`（`-26.34%`）
 - `visited_insert_ns`: `333,676` -> `371,466`（`+11.33%`、次段 WS5 で最適化対象）

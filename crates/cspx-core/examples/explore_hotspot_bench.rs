@@ -26,7 +26,7 @@ impl TransitionProvider for DenseDuplicateProvider {
     }
 
     fn transitions(&self, state: &Self::State) -> Vec<(Self::Transition, Self::State)> {
-        let (layer, node) = *state;
+        let (layer, _node) = *state;
         if layer >= self.depth {
             return Vec::new();
         }
@@ -35,11 +35,9 @@ impl TransitionProvider for DenseDuplicateProvider {
         let mut out = Vec::with_capacity(capacity);
         for branch in 0..self.fanout {
             let next_state = (layer + 1, branch);
-            for dup in 0..self.duplicate_factor {
-                out.push((
-                    Self::transition(format!("l{layer}_n{node}_b{branch}_d{dup}")),
-                    next_state,
-                ));
+            let transition = Self::transition("edge".to_string());
+            for _dup in 0..self.duplicate_factor {
+                out.push((transition.clone(), next_state));
             }
         }
         out

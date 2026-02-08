@@ -214,12 +214,17 @@ where
     let mut transitions: u64 = 0;
 
     let initial = provider.initial_state();
-    let insert_start = Instant::now();
-    let inserted = store.insert(initial.clone())?;
-    let insert_ns = duration_ns(insert_start.elapsed());
-    if let Some(p) = profile.as_deref_mut() {
-        add_ns(&mut p.visited_insert_ns, insert_ns);
-    }
+    let inserted = if let Some(p) = profile.as_deref_mut() {
+        let insert_start = Instant::now();
+        let inserted = store.insert(initial.clone())?;
+        add_ns(
+            &mut p.visited_insert_ns,
+            duration_ns(insert_start.elapsed()),
+        );
+        inserted
+    } else {
+        store.insert(initial.clone())?
+    };
     if inserted {
         queue.push(initial);
         states += 1;
@@ -233,24 +238,34 @@ where
             p.expanded_states = p.expanded_states.saturating_add(1);
         }
 
-        let generation_start = Instant::now();
-        let next = provider.transitions(&state);
-        let generation_ns = duration_ns(generation_start.elapsed());
+        let next = if let Some(p) = profile.as_deref_mut() {
+            let generation_start = Instant::now();
+            let generated = provider.transitions(&state);
+            let generation_ns = duration_ns(generation_start.elapsed());
+            add_ns(&mut p.state_generation_ns, generation_ns);
+            add_ns(&mut p.state_generation_wall_ns, generation_ns);
+            generated
+        } else {
+            provider.transitions(&state)
+        };
         let generated = next.len() as u64;
         transitions = transitions.saturating_add(generated);
         if let Some(p) = profile.as_deref_mut() {
             p.generated_transitions = p.generated_transitions.saturating_add(generated);
-            add_ns(&mut p.state_generation_ns, generation_ns);
-            add_ns(&mut p.state_generation_wall_ns, generation_ns);
         }
 
         for (_label, next_state) in next {
-            let insert_start = Instant::now();
-            let inserted = store.insert(next_state.clone())?;
-            let insert_ns = duration_ns(insert_start.elapsed());
-            if let Some(p) = profile.as_deref_mut() {
-                add_ns(&mut p.visited_insert_ns, insert_ns);
-            }
+            let inserted = if let Some(p) = profile.as_deref_mut() {
+                let insert_start = Instant::now();
+                let inserted = store.insert(next_state.clone())?;
+                add_ns(
+                    &mut p.visited_insert_ns,
+                    duration_ns(insert_start.elapsed()),
+                );
+                inserted
+            } else {
+                store.insert(next_state.clone())?
+            };
             if inserted {
                 queue.push(next_state);
                 states += 1;
@@ -283,12 +298,17 @@ where
     let mut transitions: u64 = 0;
 
     let initial = provider.initial_state();
-    let insert_start = Instant::now();
-    let inserted = store.insert(initial.clone())?;
-    let insert_ns = duration_ns(insert_start.elapsed());
-    if let Some(p) = profile.as_deref_mut() {
-        add_ns(&mut p.visited_insert_ns, insert_ns);
-    }
+    let inserted = if let Some(p) = profile.as_deref_mut() {
+        let insert_start = Instant::now();
+        let inserted = store.insert(initial.clone())?;
+        add_ns(
+            &mut p.visited_insert_ns,
+            duration_ns(insert_start.elapsed()),
+        );
+        inserted
+    } else {
+        store.insert(initial.clone())?
+    };
     if inserted {
         states += 1;
         if let Some(p) = profile.as_deref_mut() {
@@ -296,7 +316,7 @@ where
         }
     }
 
-    let mut frontier = vec![initial];
+    let mut frontier = if inserted { vec![initial] } else { Vec::new() };
     let pool = ThreadPoolBuilder::new()
         .num_threads(workers.max(1))
         .build()
@@ -309,38 +329,59 @@ where
         }
 
         let batch = frontier;
-        let generation_worker_ns = AtomicU64::new(0);
-        let generation_wall_start = Instant::now();
-        let batches = pool.install(|| {
-            batch
-                .par_iter()
-                .map(|state| {
-                    let generation_start = Instant::now();
-                    let generated = provider.transitions(state);
-                    generation_worker_ns
-                        .fetch_add(duration_ns(generation_start.elapsed()), Ordering::Relaxed);
-                    let generated_transitions = generated.len() as u64;
-                    let mut states = Vec::with_capacity(generated.len());
-                    for (_label, next_state) in generated {
-                        states.push(next_state);
-                    }
-                    TransitionBatch {
-                        generated_transitions,
-                        states,
-                    }
-                })
-                .collect::<Vec<_>>()
-        });
-        let generation_wall_ns = duration_ns(generation_wall_start.elapsed());
-        let generation_ns = generation_worker_ns.load(Ordering::Relaxed);
-        if let Some(p) = profile.as_deref_mut() {
-            add_ns(&mut p.state_generation_ns, generation_ns);
-            add_ns(&mut p.state_generation_wall_ns, generation_wall_ns);
-            add_ns(
-                &mut p.estimated_wait_ns,
-                estimate_wait_ns(generation_wall_ns, workers.max(1), generation_ns),
-            );
-        }
+        let batches = if profile.is_some() {
+            let generation_worker_ns = AtomicU64::new(0);
+            let generation_wall_start = Instant::now();
+            let batches = pool.install(|| {
+                batch
+                    .par_iter()
+                    .map(|state| {
+                        let generation_start = Instant::now();
+                        let generated = provider.transitions(state);
+                        generation_worker_ns
+                            .fetch_add(duration_ns(generation_start.elapsed()), Ordering::Relaxed);
+                        let generated_transitions = generated.len() as u64;
+                        let mut states = Vec::with_capacity(generated.len());
+                        for (_label, next_state) in generated {
+                            states.push(next_state);
+                        }
+                        TransitionBatch {
+                            generated_transitions,
+                            states,
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            });
+            let generation_wall_ns = duration_ns(generation_wall_start.elapsed());
+            let generation_ns = generation_worker_ns.load(Ordering::Relaxed);
+            if let Some(p) = profile.as_deref_mut() {
+                add_ns(&mut p.state_generation_ns, generation_ns);
+                add_ns(&mut p.state_generation_wall_ns, generation_wall_ns);
+                add_ns(
+                    &mut p.estimated_wait_ns,
+                    estimate_wait_ns(generation_wall_ns, workers.max(1), generation_ns),
+                );
+            }
+            batches
+        } else {
+            pool.install(|| {
+                batch
+                    .par_iter()
+                    .map(|state| {
+                        let generated = provider.transitions(state);
+                        let generated_transitions = generated.len() as u64;
+                        let mut states = Vec::with_capacity(generated.len());
+                        for (_label, next_state) in generated {
+                            states.push(next_state);
+                        }
+                        TransitionBatch {
+                            generated_transitions,
+                            states,
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+        };
 
         let mut next_frontier =
             Vec::with_capacity(batches.iter().map(|batch| batch.states.len()).sum());
@@ -352,12 +393,17 @@ where
                     .saturating_add(batch.generated_transitions);
             }
             for next_state in batch.states {
-                let insert_start = Instant::now();
-                let inserted = store.insert(next_state.clone())?;
-                let insert_ns = duration_ns(insert_start.elapsed());
-                if let Some(p) = profile.as_deref_mut() {
-                    add_ns(&mut p.visited_insert_ns, insert_ns);
-                }
+                let inserted = if let Some(p) = profile.as_deref_mut() {
+                    let insert_start = Instant::now();
+                    let inserted = store.insert(next_state.clone())?;
+                    add_ns(
+                        &mut p.visited_insert_ns,
+                        duration_ns(insert_start.elapsed()),
+                    );
+                    inserted
+                } else {
+                    store.insert(next_state.clone())?
+                };
                 if inserted {
                     next_frontier.push(next_state);
                     states += 1;
@@ -393,12 +439,17 @@ where
     let mut transitions: u64 = 0;
 
     let initial = provider.initial_state();
-    let insert_start = Instant::now();
-    let inserted = store.insert(initial.clone())?;
-    let insert_ns = duration_ns(insert_start.elapsed());
-    if let Some(p) = profile.as_deref_mut() {
-        add_ns(&mut p.visited_insert_ns, insert_ns);
-    }
+    let inserted = if let Some(p) = profile.as_deref_mut() {
+        let insert_start = Instant::now();
+        let inserted = store.insert(initial.clone())?;
+        add_ns(
+            &mut p.visited_insert_ns,
+            duration_ns(insert_start.elapsed()),
+        );
+        inserted
+    } else {
+        store.insert(initial.clone())?
+    };
     if inserted {
         states += 1;
         if let Some(p) = profile.as_deref_mut() {
@@ -406,7 +457,7 @@ where
         }
     }
 
-    let mut frontier = vec![initial];
+    let mut frontier = if inserted { vec![initial] } else { Vec::new() };
     let pool = ThreadPoolBuilder::new()
         .num_threads(workers.max(1))
         .build()
@@ -422,54 +473,84 @@ where
 
         let batch = frontier;
         let chunk_size = batch.len().div_ceil(workers).max(1);
-        let generation_worker_ns = AtomicU64::new(0);
-        let frontier_worker_ns = AtomicU64::new(0);
-        let generation_wall_start = Instant::now();
-        let chunks = pool.install(|| {
-            batch
-                .par_chunks(chunk_size)
-                .map(|chunk| {
-                    let mut states = Vec::new();
-                    let mut generated_transitions = 0u64;
-                    for state in chunk {
-                        let generation_start = Instant::now();
-                        let generated = provider.transitions(state);
-                        generation_worker_ns
-                            .fetch_add(duration_ns(generation_start.elapsed()), Ordering::Relaxed);
-                        generated_transitions =
-                            generated_transitions.saturating_add(generated.len() as u64);
-                        states.reserve(generated.len());
-                        for (_label, next_state) in generated {
-                            states.push(next_state);
+        let chunks = if profile.is_some() {
+            let generation_worker_ns = AtomicU64::new(0);
+            let frontier_worker_ns = AtomicU64::new(0);
+            let generation_wall_start = Instant::now();
+            let chunks = pool.install(|| {
+                batch
+                    .par_chunks(chunk_size)
+                    .map(|chunk| {
+                        let mut states = Vec::new();
+                        let mut generated_transitions = 0u64;
+                        for state in chunk {
+                            let generation_start = Instant::now();
+                            let generated = provider.transitions(state);
+                            generation_worker_ns.fetch_add(
+                                duration_ns(generation_start.elapsed()),
+                                Ordering::Relaxed,
+                            );
+                            generated_transitions =
+                                generated_transitions.saturating_add(generated.len() as u64);
+                            states.reserve(generated.len());
+                            for (_label, next_state) in generated {
+                                states.push(next_state);
+                            }
                         }
-                    }
-                    let local_frontier_start = Instant::now();
-                    states.sort();
-                    states.dedup();
-                    frontier_worker_ns.fetch_add(
-                        duration_ns(local_frontier_start.elapsed()),
-                        Ordering::Relaxed,
-                    );
-                    TransitionBatch {
-                        generated_transitions,
-                        states,
-                    }
-                })
-                .collect::<Vec<_>>()
-        });
-        let generation_wall_ns = duration_ns(generation_wall_start.elapsed());
-        let generation_ns = generation_worker_ns.load(Ordering::Relaxed);
-        let frontier_ns = frontier_worker_ns.load(Ordering::Relaxed);
-        let worker_busy_ns = generation_ns.saturating_add(frontier_ns);
-        if let Some(p) = profile.as_deref_mut() {
-            add_ns(&mut p.state_generation_ns, generation_ns);
-            add_ns(&mut p.state_generation_wall_ns, generation_wall_ns);
-            add_ns(&mut p.frontier_maintenance_ns, frontier_ns);
-            add_ns(
-                &mut p.estimated_wait_ns,
-                estimate_wait_ns(generation_wall_ns, workers.max(1), worker_busy_ns),
-            );
-        }
+                        let local_frontier_start = Instant::now();
+                        states.sort();
+                        states.dedup();
+                        frontier_worker_ns.fetch_add(
+                            duration_ns(local_frontier_start.elapsed()),
+                            Ordering::Relaxed,
+                        );
+                        TransitionBatch {
+                            generated_transitions,
+                            states,
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            });
+            let generation_wall_ns = duration_ns(generation_wall_start.elapsed());
+            let generation_ns = generation_worker_ns.load(Ordering::Relaxed);
+            let frontier_ns = frontier_worker_ns.load(Ordering::Relaxed);
+            let worker_busy_ns = generation_ns.saturating_add(frontier_ns);
+            if let Some(p) = profile.as_deref_mut() {
+                add_ns(&mut p.state_generation_ns, generation_ns);
+                add_ns(&mut p.state_generation_wall_ns, generation_wall_ns);
+                add_ns(&mut p.frontier_maintenance_ns, frontier_ns);
+                add_ns(
+                    &mut p.estimated_wait_ns,
+                    estimate_wait_ns(generation_wall_ns, workers.max(1), worker_busy_ns),
+                );
+            }
+            chunks
+        } else {
+            pool.install(|| {
+                batch
+                    .par_chunks(chunk_size)
+                    .map(|chunk| {
+                        let mut states = Vec::new();
+                        let mut generated_transitions = 0u64;
+                        for state in chunk {
+                            let generated = provider.transitions(state);
+                            generated_transitions =
+                                generated_transitions.saturating_add(generated.len() as u64);
+                            states.reserve(generated.len());
+                            for (_label, next_state) in generated {
+                                states.push(next_state);
+                            }
+                        }
+                        states.sort();
+                        states.dedup();
+                        TransitionBatch {
+                            generated_transitions,
+                            states,
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+        };
 
         let mut candidates =
             Vec::with_capacity(chunks.iter().map(|batch| batch.states.len()).sum());
@@ -482,22 +563,32 @@ where
             }
             candidates.append(&mut chunk.states);
         }
-        let dedup_start = Instant::now();
-        candidates.sort();
-        candidates.dedup();
-        let dedup_ns = duration_ns(dedup_start.elapsed());
         if let Some(p) = profile.as_deref_mut() {
-            add_ns(&mut p.frontier_maintenance_ns, dedup_ns);
+            let dedup_start = Instant::now();
+            candidates.sort();
+            candidates.dedup();
+            add_ns(
+                &mut p.frontier_maintenance_ns,
+                duration_ns(dedup_start.elapsed()),
+            );
+        } else {
+            candidates.sort();
+            candidates.dedup();
         }
 
         let mut next_frontier = Vec::new();
         for next_state in candidates {
-            let insert_start = Instant::now();
-            let inserted = store.insert(next_state.clone())?;
-            let insert_ns = duration_ns(insert_start.elapsed());
-            if let Some(p) = profile.as_deref_mut() {
-                add_ns(&mut p.visited_insert_ns, insert_ns);
-            }
+            let inserted = if let Some(p) = profile.as_deref_mut() {
+                let insert_start = Instant::now();
+                let inserted = store.insert(next_state.clone())?;
+                add_ns(
+                    &mut p.visited_insert_ns,
+                    duration_ns(insert_start.elapsed()),
+                );
+                inserted
+            } else {
+                store.insert(next_state.clone())?
+            };
             if inserted {
                 states += 1;
                 next_frontier.push(next_state);

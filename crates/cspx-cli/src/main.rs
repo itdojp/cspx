@@ -470,7 +470,10 @@ fn build_explore_hotspots(profile: &ExploreHotspotProfile) -> ExploreHotspotsMet
 }
 
 fn ns_to_ms(value: u64) -> u64 {
-    value / 1_000_000
+    if value == 0 {
+        return 0;
+    }
+    value.saturating_add(999_999) / 1_000_000
 }
 
 fn ratio_pct(value: u64, total: u64) -> f64 {
