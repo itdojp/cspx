@@ -73,6 +73,7 @@
 - `--parallel <n>`（default: `1`、`n>=1`）
 - `--deterministic`（決定性モード）
 - `--seed <n>`（default: `0`、ただし `--deterministic` 指定時は必須）
+- `--explore-profile`（探索ホットパス計測を有効化）
 - `--version`
 
 ## Exit code 規約
@@ -89,6 +90,7 @@
 - `--timeout-ms` / `--memory-mb` が指定されない場合、Result JSON では `null` を出力する。
 - `--parallel` / `--deterministic` / `--seed` は invocation に記録される。
 - Result JSON は互換拡張として `metrics`（states/transitions/time/disk/parallelism）を持つことがある。
+- `--explore-profile` 指定時、`metrics.explore_hotspots` に探索ボトルネック（state生成/visited/frontier/wait）の計測結果が出力される。
 - `--summary-json` を指定した場合、Result JSON とは別に `schemas/csp-summary.schema.json` 準拠の要約 JSON を出力する。
 - 現行の CLI 実装では `typecheck` の状態空間統計計算で並列探索設定が有効になる。
 
