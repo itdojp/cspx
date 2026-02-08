@@ -100,10 +100,12 @@ scripts/run-problems --suite fast --cspx target/debug/cspx
 - PR では機能回帰検知を優先し、性能回帰検知は専用導線で扱う
 
 bench は `.github/workflows/bench.yml` で nightly（`schedule`）および手動（`workflow_dispatch`）実行する。
-- 実行ポリシー: `scripts/run-problems --suite bench --cspx target/release/cspx`
+- 実行ポリシー: `scripts/run-problems --suite bench --measure-runs 5 --warmup-runs 1 --cspx target/release/cspx`
 - 生成物: artifact `bench-results`（`artifacts/bench`, `problems/.out`）
 - `scripts/run-problems` の終了コードは `0/1` を許容し、`1`（期待値不一致）は workflow を fail させない
 - `2`（runner内部エラー）および `0/1` 以外の想定外終了コードは workflow を fail とする
+- `scripts/bench-baseline compare` で baseline 比較を実行し、`warn/fail` 閾値（既定 20%/40%）で性能劣化を判定する
+- `workflow_dispatch` の `update_baseline_candidate=true` で baseline 候補 JSON を artifact 出力する
 
 ## 実行結果（`problems/.out`）
 問題実行の生成物は `problems/.out/<P###>/` 配下に出力される。
@@ -277,6 +279,7 @@ target: { contains: "deadlock free" }
 - `docs/cli.md`（exit code 規約、timeout など）
 - `docs/result-json.md`（Result JSON 形状と status/reason）
 - `docs/scale.md`（Plan C: Scale/Performance の仕様）
+- `docs/bench-baseline.md`（baseline 比較・更新フロー）
 - `problems/generators/README.md`（bench 生成問題の再生成手順）
 
 ## 関連 Issue（Plan C）
