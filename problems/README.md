@@ -50,6 +50,21 @@ scripts/run-problems --cspx target/debug/cspx --only-dir problems/P000_hello_typ
 - `--cspx <path>`: `run.cmd[0] == "cspx"` の場合に `cspx` 実体を差し替える（例: `target/debug/cspx`）
 - `--jobs <n>`: 並列実行（問題単位、出力順は ID 昇順で安定化）
 
+## suite 運用規約（fast / bench）
+### 目的
+- `fast`: PR/Push CI で常時実行する回帰検知
+- `bench`: 性能計測・スケール観測用（常時CIには載せない）
+
+### 追加規約（新規問題）
+- `suite` は `problem.yaml` に明示する（タグ推論に依存しない）
+- 新規 `bench` 問題の ID は原則 `P9xx` を使う（既存互換の例外を除く）
+- スケール題材の追加は `problems/generators/`（#112）で再生成可能にする
+
+### 実行条件
+- `fast` は開発中の即時確認を優先し、`target/debug/cspx` での実行を標準とする
+- `bench` は計測ノイズを抑えるため、`target/release/cspx` を標準とする
+- `bench` 実行時は必要に応じて `--jobs` を固定し、比較時の条件を揃える
+
 ## bench 生成問題の運用（#112）
 ### 再生成手順（`problems/generators`）
 1) `problems/generators/regenerate_p900_p905.sh` を実行し、`P900`〜`P905` の `model.cspm` を再生成する  
@@ -77,10 +92,10 @@ scripts/run-problems --suite fast --cspx target/debug/cspx
 ```
 失敗時は `problems/.out` を artifact（`problems-out`）として upload する。
 
-### CI 責務分離（fast / bench）
-- `.github/workflows/ci.yml` の必須ジョブは `fast` のみを実行する
-- `bench` はローカル実行または専用 workflow（nightly / manual、#115 / #116）で扱い、PR 必須ゲートには含めない
-- 機能回帰判定は `fast`、性能回帰判定は `bench` 側で扱う
+### CI 責務分離
+- `fast` のみを `ci.yml` の必須ジョブに含める
+- `bench` は別 workflow（nightly / manual、#115 / #116）またはローカルで運用する
+- PR では機能回帰検知を優先し、性能回帰検知は専用導線で扱う
 
 ## 実行結果（`problems/.out`）
 問題実行の生成物は `problems/.out/<P###>/` 配下に出力される。
@@ -148,7 +163,7 @@ compare:
   - `problem.yaml`
   - `expect.yaml`
   - `notes.md`（任意）
-- 生成型 `bench` 問題は `problems/generators/` に生成ロジックと再生成手順を置く
+- 生成型の `bench` 問題は `problems/generators/` に生成ロジックと再生成手順（スクリプト/テンプレート）を置く
 
 ## `problem.yaml`
 ### 例
@@ -238,7 +253,15 @@ target: { contains: "deadlock free" }
 ## 関連ドキュメント
 - `docs/cli.md`（exit code 規約、timeout など）
 - `docs/result-json.md`（Result JSON 形状と status/reason）
+- `docs/scale.md`（Plan C: Scale/Performance の仕様）
 - `problems/generators/README.md`（bench 生成問題の再生成手順）
+
+## 関連 Issue（Plan C）
+- `#110`（Execution Epic）
+- `#112`（パラメトリック問題生成）
+- `#113`（metrics 拡張）
+- `#114`（計測ブレ対策 / deterministic 整合）
+- `#115`, `#116`（bench CI / baseline 比較）
 
 ## スキーマ
 - `schemas/problem.schema.json`
