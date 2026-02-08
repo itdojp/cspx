@@ -136,6 +136,12 @@ where
         codec: C,
         options: DiskStateStoreOpenOptions,
     ) -> io::Result<Self> {
+        if options.index_flush_every == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "index_flush_every must be >= 1",
+            ));
+        }
         let open_start = Instant::now();
         let paths = StorePaths::new(path.as_ref().to_path_buf());
         if let Some(parent) = paths
@@ -158,7 +164,9 @@ where
                 {
                     contention_events = contention_events.saturating_add(1);
                     retries = retries.saturating_add(1);
-                    if !options.lock_retry_backoff.is_zero() {
+                    if options.lock_retry_backoff.is_zero() {
+                        thread::yield_now();
+                    } else {
                         thread::sleep(options.lock_retry_backoff);
                     }
                 }
@@ -219,7 +227,7 @@ where
             codec,
             index,
             metrics,
-            index_flush_every: options.index_flush_every.max(1),
+            index_flush_every: options.index_flush_every,
             pending_index_updates: 0,
             current_log_len,
             _lock: lock,

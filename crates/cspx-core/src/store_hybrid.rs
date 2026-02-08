@@ -44,15 +44,25 @@ where
         codec: C,
         options: HybridStateStoreOptions,
     ) -> io::Result<Self> {
+        let spill_path = spill_path.as_ref().to_path_buf();
         if options.spill_threshold == 0 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "spill_threshold must be >= 1",
             ));
         }
+        if spill_path.exists() {
+            return Err(io::Error::new(
+                io::ErrorKind::AlreadyExists,
+                format!(
+                    "spill path already exists; use a fresh path: {}",
+                    spill_path.display()
+                ),
+            ));
+        }
         Ok(Self {
             in_memory: HashSet::new(),
-            spill_path: spill_path.as_ref().to_path_buf(),
+            spill_path,
             codec,
             options,
             spill_store: None,
@@ -101,10 +111,16 @@ where
 
         let should_spill = self.in_memory.len() > self.options.spill_threshold;
         let had_spill = self.spill_store.is_some();
-        self.activate_spill_if_needed()?;
+        if let Err(err) = self.activate_spill_if_needed() {
+            self.in_memory.remove(&state);
+            return Err(err);
+        }
         if should_spill && had_spill {
             if let Some(spill_store) = self.spill_store.as_mut() {
-                let _ = spill_store.insert(state)?;
+                if let Err(err) = spill_store.insert(state.clone()) {
+                    self.in_memory.remove(&state);
+                    return Err(err);
+                }
             }
         }
         Ok(true)
