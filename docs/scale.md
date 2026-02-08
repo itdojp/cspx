@@ -188,3 +188,19 @@ deterministic mode は「スケジュールに依存しない探索順」を仕�
 - `hotspots[0]` が `state_generation` 優位なら WS4-B（探索処理）を先行する。
 - `hotspots[0]` が `visited_insert` 優位なら WS5（Disk/Hybrid store）を先行する。
 - `frontier_maintenance` 優位なら deterministic 探索の frontier 正規化・dedup を最適化対象にする。
+
+## 探索エンジン最適化（WS4-B / v0.2）
+### 実装方針
+- deterministic 並列探索で「前段でソート済み frontier を次段で再ソートする」処理を削減する。
+- 並列チャンクごとに `next_state` へ早期変換し、局所 `sort/dedup` を先行して中間データ量を圧縮する。
+- `candidates` / `next_frontier` を事前確保し、再確保回数を削減する。
+- worker 内で実施した局所 `sort/dedup` 時間を busy 側に計上し、`estimated_wait` の解釈を維持する。
+
+### 効果測定（7-run median）
+- 再現コマンド: `cargo run -q -p cspx-core --example explore_hotspot_bench`
+- 比較条件: baseline=`b3a8c39`（WS4-A） vs WS4-B 実装後、同一マシン・同一オプション。
+- 注記: 以下は `explore_hotspot_bench` の標準出力（`*_ns`）であり、Result JSON の `metrics.explore_hotspots` は `*_ms` で出力する。
+- `state_generation_ns`: `25,466,309` -> `21,203,640`（`-16.74%`）
+- `frontier_maintenance_ns`: `22,786,045` -> `16,784,140`（`-26.34%`）
+- `visited_insert_ns`: `333,676` -> `371,466`（`+11.33%`、次段 WS5 で最適化対象）
+- `estimated_wait_ns`: `11,128,346` -> `14,494,973`（`+30.25%`、負荷偏りの追加分析は WS6 で扱う）

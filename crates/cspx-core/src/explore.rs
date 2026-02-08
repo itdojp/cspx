@@ -47,6 +47,12 @@ pub struct ExploreHotspotProfile {
     pub estimated_wait_ns: u64,
 }
 
+#[derive(Debug)]
+struct TransitionBatch<S> {
+    generated_transitions: u64,
+    states: Vec<S>,
+}
+
 impl ExploreHotspotProfile {
     fn new(mode: ExploreProfileMode, workers: usize) -> Self {
         Self {
@@ -334,7 +340,15 @@ where
                         let generated = provider.transitions(state);
                         generation_worker_ns
                             .fetch_add(duration_ns(generation_start.elapsed()), Ordering::Relaxed);
-                        generated
+                        let generated_transitions = generated.len() as u64;
+                        let mut states = Vec::with_capacity(generated.len());
+                        for (_label, next_state) in generated {
+                            states.push(next_state);
+                        }
+                        TransitionBatch {
+                            generated_transitions,
+                            states,
+                        }
                     })
                     .collect::<Vec<_>>()
             });
@@ -353,19 +367,32 @@ where
             pool.install(|| {
                 batch
                     .par_iter()
-                    .map(|state| provider.transitions(state))
+                    .map(|state| {
+                        let generated = provider.transitions(state);
+                        let generated_transitions = generated.len() as u64;
+                        let mut states = Vec::with_capacity(generated.len());
+                        for (_label, next_state) in generated {
+                            states.push(next_state);
+                        }
+                        TransitionBatch {
+                            generated_transitions,
+                            states,
+                        }
+                    })
                     .collect::<Vec<_>>()
             })
         };
 
-        let mut next_frontier = Vec::new();
-        for transitions_vec in batches {
-            let generated = transitions_vec.len() as u64;
-            transitions = transitions.saturating_add(generated);
+        let mut next_frontier =
+            Vec::with_capacity(batches.iter().map(|batch| batch.states.len()).sum());
+        for batch in batches {
+            transitions = transitions.saturating_add(batch.generated_transitions);
             if let Some(p) = profile.as_deref_mut() {
-                p.generated_transitions = p.generated_transitions.saturating_add(generated);
+                p.generated_transitions = p
+                    .generated_transitions
+                    .saturating_add(batch.generated_transitions);
             }
-            for (_label, next_state) in transitions_vec {
+            for next_state in batch.states {
                 let inserted = if let Some(p) = profile.as_deref_mut() {
                     let insert_start = Instant::now();
                     let inserted = store.insert(next_state.clone())?;
@@ -442,49 +469,59 @@ where
             p.expanded_states = p.expanded_states.saturating_add(frontier.len() as u64);
         }
 
-        if let Some(p) = profile.as_deref_mut() {
-            let sort_start = Instant::now();
-            frontier.sort();
-            add_ns(
-                &mut p.frontier_maintenance_ns,
-                duration_ns(sort_start.elapsed()),
-            );
-        } else {
-            frontier.sort();
-        }
+        debug_assert!(frontier.windows(2).all(|window| window[0] <= window[1]));
 
         let batch = frontier;
         let chunk_size = batch.len().div_ceil(workers).max(1);
         let chunks = if profile.is_some() {
             let generation_worker_ns = AtomicU64::new(0);
+            let frontier_worker_ns = AtomicU64::new(0);
             let generation_wall_start = Instant::now();
             let chunks = pool.install(|| {
                 batch
                     .par_chunks(chunk_size)
                     .map(|chunk| {
-                        chunk
-                            .iter()
-                            .map(|state| {
-                                let generation_start = Instant::now();
-                                let generated = provider.transitions(state);
-                                generation_worker_ns.fetch_add(
-                                    duration_ns(generation_start.elapsed()),
-                                    Ordering::Relaxed,
-                                );
-                                generated
-                            })
-                            .collect::<Vec<_>>()
+                        let mut states = Vec::new();
+                        let mut generated_transitions = 0u64;
+                        for state in chunk {
+                            let generation_start = Instant::now();
+                            let generated = provider.transitions(state);
+                            generation_worker_ns.fetch_add(
+                                duration_ns(generation_start.elapsed()),
+                                Ordering::Relaxed,
+                            );
+                            generated_transitions =
+                                generated_transitions.saturating_add(generated.len() as u64);
+                            states.reserve(generated.len());
+                            for (_label, next_state) in generated {
+                                states.push(next_state);
+                            }
+                        }
+                        let local_frontier_start = Instant::now();
+                        states.sort();
+                        states.dedup();
+                        frontier_worker_ns.fetch_add(
+                            duration_ns(local_frontier_start.elapsed()),
+                            Ordering::Relaxed,
+                        );
+                        TransitionBatch {
+                            generated_transitions,
+                            states,
+                        }
                     })
                     .collect::<Vec<_>>()
             });
             let generation_wall_ns = duration_ns(generation_wall_start.elapsed());
             let generation_ns = generation_worker_ns.load(Ordering::Relaxed);
+            let frontier_ns = frontier_worker_ns.load(Ordering::Relaxed);
+            let worker_busy_ns = generation_ns.saturating_add(frontier_ns);
             if let Some(p) = profile.as_deref_mut() {
                 add_ns(&mut p.state_generation_ns, generation_ns);
                 add_ns(&mut p.state_generation_wall_ns, generation_wall_ns);
+                add_ns(&mut p.frontier_maintenance_ns, frontier_ns);
                 add_ns(
                     &mut p.estimated_wait_ns,
-                    estimate_wait_ns(generation_wall_ns, workers.max(1), generation_ns),
+                    estimate_wait_ns(generation_wall_ns, workers.max(1), worker_busy_ns),
                 );
             }
             chunks
@@ -493,27 +530,38 @@ where
                 batch
                     .par_chunks(chunk_size)
                     .map(|chunk| {
-                        chunk
-                            .iter()
-                            .map(|state| provider.transitions(state))
-                            .collect::<Vec<_>>()
+                        let mut states = Vec::new();
+                        let mut generated_transitions = 0u64;
+                        for state in chunk {
+                            let generated = provider.transitions(state);
+                            generated_transitions =
+                                generated_transitions.saturating_add(generated.len() as u64);
+                            states.reserve(generated.len());
+                            for (_label, next_state) in generated {
+                                states.push(next_state);
+                            }
+                        }
+                        states.sort();
+                        states.dedup();
+                        TransitionBatch {
+                            generated_transitions,
+                            states,
+                        }
                     })
                     .collect::<Vec<_>>()
             })
         };
 
-        let mut candidates = Vec::new();
-        for chunk in chunks {
-            for transitions_vec in chunk {
-                let generated = transitions_vec.len() as u64;
-                transitions = transitions.saturating_add(generated);
-                if let Some(p) = profile.as_deref_mut() {
-                    p.generated_transitions = p.generated_transitions.saturating_add(generated);
-                }
-                for (_label, next_state) in transitions_vec {
-                    candidates.push(next_state);
-                }
+        let mut candidates =
+            Vec::with_capacity(chunks.iter().map(|batch| batch.states.len()).sum());
+        for mut chunk in chunks {
+            transitions = transitions.saturating_add(chunk.generated_transitions);
+            if let Some(p) = profile.as_deref_mut() {
+                p.generated_transitions = p
+                    .generated_transitions
+                    .saturating_add(chunk.generated_transitions);
             }
+            candidates.append(&mut chunk.states);
         }
         if let Some(p) = profile.as_deref_mut() {
             let dedup_start = Instant::now();
