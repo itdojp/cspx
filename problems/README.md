@@ -65,6 +65,25 @@ scripts/run-problems --cspx target/debug/cspx --only-dir problems/P000_hello_typ
 - `bench` は計測ノイズを抑えるため、`target/release/cspx` を標準とする
 - `bench` 実行時は必要に応じて `--jobs` を固定し、比較時の条件を揃える
 
+## bench 生成問題の運用（#112）
+### 再生成手順（`problems/generators`）
+1) `problems/generators/regenerate_p900_p905.sh` を実行し、`P900`〜`P905` の `model.cspm` を再生成する  
+2) `scripts/run-problems --suite bench --list` で対象問題（`P310`, `P900`〜`P905`）が列挙されることを確認する  
+3) `cargo build -p cspx --release` 後に `scripts/run-problems --suite bench --cspx target/release/cspx --only P900 --only P901 --only P902 --only P903 --only P904 --only P905` を実行する  
+4) `problems/.out/<P###>/report.txt` と差分（`model.cspm` / `problem.yaml` / `expect.yaml` / `notes.md`）をレビューする
+
+### 推奨パラメータレンジ（tiny / medium）
+- `ring(N)`: tiny=`4`, medium=`16`
+- `philosopher_loops(K)`: tiny=`3`, medium=`5`（shared fork を省略した interleaving 近似）
+- `ABP(M)`（送受信シーケンス上限）: tiny=`1`（`0..1`）, medium=`3`（`0..3`）
+
+### bench 実行時の timeout/失敗運用
+- `P900`〜`P905` は `run.timeout_ms` を明示し、計測時の暴走を防ぐ
+- `P310` は timeout 挙動観測用の placeholder として、`pass/timeout/unsupported/error` を許容する
+- `run.timeout_ms` に達した run は runner が kill し、`exit_code=124` を記録する（`cspx --timeout-ms` の exit code `4` とは別）
+- 期待値不一致が 1 件以上ある場合、`scripts/run-problems` 全体の終了コードは `1`。runner 内部エラー（読み込み/spawn 失敗等）の場合は `2`
+- `bench` の timeout/失敗は性能観測の入力として扱い、まず `problems/.out` で原因を切り分けた上で再計測する
+
 ## CI での実行
 GitHub Actions では以下を実行する（`.github/workflows/ci.yml`）。
 ```sh
@@ -75,7 +94,7 @@ scripts/run-problems --suite fast --cspx target/debug/cspx
 
 ### CI 責務分離
 - `fast` のみを `ci.yml` の必須ジョブに含める
-- `bench` は別 workflow（nightly / manual。#115, #116 で追加予定）で運用する
+- `bench` は別 workflow（nightly / manual、#115 / #116）またはローカルで運用する
 - PR では機能回帰検知を優先し、性能回帰検知は専用導線で扱う
 
 ## 実行結果（`problems/.out`）
@@ -144,7 +163,7 @@ compare:
   - `problem.yaml`
   - `expect.yaml`
   - `notes.md`（任意）
-- 生成型の `bench` 問題は `problems/generators/` に生成手順（スクリプト/テンプレート）を置く（`problems/generators/` は #112 で追加予定）
+- 生成型の `bench` 問題は `problems/generators/` に生成ロジックと再生成手順（スクリプト/テンプレート）を置く
 
 ## `problem.yaml`
 ### 例
@@ -235,6 +254,7 @@ target: { contains: "deadlock free" }
 - `docs/cli.md`（exit code 規約、timeout など）
 - `docs/result-json.md`（Result JSON 形状と status/reason）
 - `docs/scale.md`（Plan C: Scale/Performance の仕様）
+- `problems/generators/README.md`（bench 生成問題の再生成手順）
 
 ## 関連 Issue（Plan C）
 - `#110`（Execution Epic）
