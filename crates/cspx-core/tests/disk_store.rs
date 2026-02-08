@@ -2,6 +2,7 @@ use cspx_core::state_codec::StateCodecError;
 use cspx_core::{DiskStateStore, DiskStateStoreOpenOptions, StateCodec, StateStore};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
+use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
@@ -145,7 +146,9 @@ fn disk_state_store_metrics_capture_lock_retry_wait() {
 
     let first = DiskStateStore::open(&path, ByteCodec).expect("first open");
     let retry_path = path.clone();
+    let (started_tx, started_rx) = mpsc::channel();
     let handle = thread::spawn(move || {
+        started_tx.send(()).expect("signal start");
         let store = DiskStateStore::open_with_options(
             &retry_path,
             ByteCodec,
@@ -158,6 +161,9 @@ fn disk_state_store_metrics_capture_lock_retry_wait() {
         store.metrics().clone()
     });
 
+    started_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("wait start signal");
     thread::sleep(Duration::from_millis(20));
     drop(first);
 

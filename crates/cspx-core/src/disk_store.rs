@@ -150,7 +150,9 @@ where
                 {
                     contention_events = contention_events.saturating_add(1);
                     retries = retries.saturating_add(1);
-                    if !options.lock_retry_backoff.is_zero() {
+                    if options.lock_retry_backoff.is_zero() {
+                        thread::yield_now();
+                    } else {
                         thread::sleep(options.lock_retry_backoff);
                     }
                 }
