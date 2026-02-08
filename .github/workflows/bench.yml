@@ -98,7 +98,11 @@ jobs:
           rc=$?
           set -e
           echo "compare_exit_code=${rc}" >> "$GITHUB_OUTPUT"
-          cat artifacts/bench/baseline-compare.md >> "$GITHUB_STEP_SUMMARY"
+          if [ -f artifacts/bench/baseline-compare.md ]; then
+            cat artifacts/bench/baseline-compare.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "baseline compare report is unavailable" >> "$GITHUB_STEP_SUMMARY"
+          fi
           if [ "${rc}" -ne 0 ]; then
             echo "bench baseline comparison failed" >&2
             exit "${rc}"

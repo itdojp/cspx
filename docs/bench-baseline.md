@@ -8,8 +8,8 @@
 ## 比較対象と判定
 - 比較対象: `problems/.out/<P###>/metrics-summary.json` の `aggregate.duration_ms.median`
 - 判定:
-  - `delta_pct >= fail_threshold` -> `fail`（exit code 1）
-  - `delta_pct >= warn_threshold` -> `warn`（exit code 0）
+  - `delta_pct >= fail_threshold_pct` -> `fail`（exit code 1）
+  - `delta_pct >= warn_threshold_pct` -> `warn`（exit code 0）
   - それ以外 -> `ok`
 - suppress ルール:
   - baseline が未定義 -> `new_problem`（fail にしない）

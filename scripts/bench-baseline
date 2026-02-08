@@ -57,31 +57,45 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --out-dir)
-      OUT_DIR="${2:-}"
+      [[ $# -ge 2 ]] || die "--out-dir requires a path argument"
+      OUT_DIR="$2"
+      [[ -n "${OUT_DIR}" ]] || die "--out-dir requires a non-empty path argument"
       shift 2
       ;;
     --baseline)
-      BASELINE_FILE="${2:-}"
+      [[ $# -ge 2 ]] || die "--baseline requires a path argument"
+      BASELINE_FILE="$2"
+      [[ -n "${BASELINE_FILE}" ]] || die "--baseline requires a non-empty path argument"
       shift 2
       ;;
     --report-json)
-      REPORT_JSON="${2:-}"
+      [[ $# -ge 2 ]] || die "--report-json requires a path argument"
+      REPORT_JSON="$2"
+      [[ -n "${REPORT_JSON}" ]] || die "--report-json requires a non-empty path argument"
       shift 2
       ;;
     --report-md)
-      REPORT_MD="${2:-}"
+      [[ $# -ge 2 ]] || die "--report-md requires a path argument"
+      REPORT_MD="$2"
+      [[ -n "${REPORT_MD}" ]] || die "--report-md requires a non-empty path argument"
       shift 2
       ;;
     --warn-threshold-pct)
-      WARN_THRESHOLD_PCT="${2:-}"
+      [[ $# -ge 2 ]] || die "--warn-threshold-pct requires a numeric argument"
+      WARN_THRESHOLD_PCT="$2"
+      [[ -n "${WARN_THRESHOLD_PCT}" ]] || die "--warn-threshold-pct requires a non-empty numeric argument"
       shift 2
       ;;
     --fail-threshold-pct)
-      FAIL_THRESHOLD_PCT="${2:-}"
+      [[ $# -ge 2 ]] || die "--fail-threshold-pct requires a numeric argument"
+      FAIL_THRESHOLD_PCT="$2"
+      [[ -n "${FAIL_THRESHOLD_PCT}" ]] || die "--fail-threshold-pct requires a non-empty numeric argument"
       shift 2
       ;;
     --min-baseline-ms)
-      MIN_BASELINE_MS="${2:-}"
+      [[ $# -ge 2 ]] || die "--min-baseline-ms requires a numeric argument"
+      MIN_BASELINE_MS="$2"
+      [[ -n "${MIN_BASELINE_MS}" ]] || die "--min-baseline-ms requires a non-empty numeric argument"
       shift 2
       ;;
     -h|--help)
@@ -222,9 +236,11 @@ else
       if $base == null then
         {status: "new_problem", reason: "missing baseline metric"}
       elif $current == null then
-        {status: "fail", reason: "missing current metric"}
+        {status: "skipped", reason: "missing current metric"}
       elif ($base | type) != "number" or ($current | type) != "number" then
         {status: "skipped", reason: "non numeric metric"}
+      elif $base <= 0 then
+        {status: "skipped", reason: "baseline must be > 0ms"}
       elif $base < $min_baseline_ms then
         {status: "skipped", reason: ("baseline below min_baseline_ms (" + ($min_baseline_ms | tostring) + "ms)")}
       else
