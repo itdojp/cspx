@@ -1,0 +1,3 @@
+-- P906: FD bench spec (non-divergent)
+channel a
+SPEC = STOP

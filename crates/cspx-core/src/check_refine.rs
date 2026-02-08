@@ -31,6 +31,7 @@ struct RefinementOutcome {
     pub refines: bool,
     pub failure: Option<RefinementFailure>,
     pub stats: Stats,
+    pub diagnostic_tags: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -106,6 +107,7 @@ impl Checker<RefinementInput> for RefinementChecker {
             "refinement".to_string(),
             format!("model:{}", model.as_str()),
         ];
+        tags.extend(outcome.diagnostic_tags);
         tags.extend(failure.tags);
         let required_tags = tags.clone();
 
@@ -367,6 +369,7 @@ where
                         states: Some(states_count),
                         transitions: Some(transitions_count),
                     },
+                    diagnostic_tags: Vec::new(),
                 }
             }
         }
@@ -390,6 +393,7 @@ where
                         states: Some(states_count),
                         transitions: Some(transitions_count),
                     },
+                    diagnostic_tags: Vec::new(),
                 };
             }
 
@@ -412,6 +416,7 @@ where
             states: Some(states_count),
             transitions: Some(transitions_count),
         },
+        diagnostic_tags: Vec::new(),
     }
 }
 
@@ -458,7 +463,16 @@ fn failures_divergences_includes(
     spec: &CspmTransitionProvider,
     impl_: &CspmTransitionProvider,
 ) -> RefinementOutcome {
-    bfs_refinement(spec, impl_, |node_key, impl_states, spec_states, pred| {
+    let mut divergence_checks = 0u64;
+    let mut divergence_prunes = 0u64;
+    let mut impl_closure_max = 0u64;
+    let mut spec_closure_max = 0u64;
+
+    let mut outcome = bfs_refinement(spec, impl_, |node_key, impl_states, spec_states, pred| {
+        impl_closure_max = impl_closure_max.max(impl_states.len() as u64);
+        spec_closure_max = spec_closure_max.max(spec_states.len() as u64);
+        divergence_checks = divergence_checks.saturating_add(2);
+
         let spec_diverges = closure_has_tau_cycle(spec, spec_states);
         let impl_diverges = closure_has_tau_cycle(impl_, impl_states);
         if impl_diverges && !spec_diverges {
@@ -470,6 +484,7 @@ fn failures_divergences_includes(
             });
         }
         if spec_diverges {
+            divergence_prunes = divergence_prunes.saturating_add(1);
             return NodeAction::Prune;
         }
 
@@ -492,7 +507,17 @@ fn failures_divergences_includes(
         }
 
         NodeAction::Continue
-    })
+    });
+
+    outcome.diagnostic_tags = vec![
+        format!("fd_nodes:{}", outcome.stats.states.unwrap_or_default()),
+        format!("fd_edges:{}", outcome.stats.transitions.unwrap_or_default()),
+        format!("fd_divergence_checks:{divergence_checks}"),
+        format!("fd_pruned_nodes:{divergence_prunes}"),
+        format!("fd_impl_closure_max:{impl_closure_max}"),
+        format!("fd_spec_closure_max:{spec_closure_max}"),
+    ];
+    outcome
 }
 
 #[derive(Clone, Debug)]
