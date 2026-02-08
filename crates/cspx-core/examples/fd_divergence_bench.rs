@@ -170,6 +170,22 @@ fn main() -> Result<(), Box<dyn Error>> {
             "fd_spec_closure_max={}",
             parse_fd_metric(&counterexample.tags, "fd_spec_closure_max").unwrap_or_default()
         );
+        println!(
+            "fd_closure_cache_hits={}",
+            parse_fd_metric(&counterexample.tags, "fd_closure_cache_hits").unwrap_or_default()
+        );
+        println!(
+            "fd_closure_cache_misses={}",
+            parse_fd_metric(&counterexample.tags, "fd_closure_cache_misses").unwrap_or_default()
+        );
+        println!(
+            "fd_divergence_cache_hits={}",
+            parse_fd_metric(&counterexample.tags, "fd_divergence_cache_hits").unwrap_or_default()
+        );
+        println!(
+            "fd_divergence_cache_misses={}",
+            parse_fd_metric(&counterexample.tags, "fd_divergence_cache_misses").unwrap_or_default()
+        );
     } else {
         println!("trace_len=0");
     }

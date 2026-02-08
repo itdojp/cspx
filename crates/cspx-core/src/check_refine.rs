@@ -52,10 +52,90 @@ struct Closure {
     sig: Vec<Vec<u8>>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum ProviderSide {
+    Spec,
+    Impl,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct NextClosureCacheKey {
+    side: ProviderSide,
+    from_sig: Vec<Vec<u8>>,
+    label: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct DivergenceCacheKey {
+    side: ProviderSide,
+    closure_sig: Vec<Vec<u8>>,
+}
+
 enum NodeAction {
     Continue,
     Prune,
     Fail(RefinementFailure),
+}
+
+#[derive(Debug, Default)]
+struct NextClosureCache {
+    entries: HashMap<NextClosureCacheKey, Closure>,
+    hits: u64,
+    misses: u64,
+}
+
+impl NextClosureCache {
+    fn next_by_label(
+        &mut self,
+        side: ProviderSide,
+        provider: &CspmTransitionProvider,
+        from_closure: &Closure,
+        label: &str,
+    ) -> Closure {
+        let key = NextClosureCacheKey {
+            side,
+            from_sig: from_closure.sig.clone(),
+            label: label.to_string(),
+        };
+        if let Some(cached) = self.entries.get(&key) {
+            self.hits = self.hits.saturating_add(1);
+            return cached.clone();
+        }
+        self.misses = self.misses.saturating_add(1);
+        let computed = next_by_label(provider, &from_closure.states, label);
+        self.entries.insert(key, computed.clone());
+        computed
+    }
+}
+
+#[derive(Debug, Default)]
+struct DivergenceCache {
+    entries: HashMap<DivergenceCacheKey, bool>,
+    hits: u64,
+    misses: u64,
+}
+
+impl DivergenceCache {
+    fn has_tau_cycle(
+        &mut self,
+        side: ProviderSide,
+        closure_sig: &[Vec<u8>],
+        provider: &CspmTransitionProvider,
+        closure_states: &[State],
+    ) -> bool {
+        let key = DivergenceCacheKey {
+            side,
+            closure_sig: closure_sig.to_vec(),
+        };
+        if let Some(cached) = self.entries.get(&key).copied() {
+            self.hits = self.hits.saturating_add(1);
+            return cached;
+        }
+        self.misses = self.misses.saturating_add(1);
+        let computed = closure_has_tau_cycle(provider, closure_states);
+        self.entries.insert(key, computed);
+        computed
+    }
 }
 
 impl Checker<RefinementInput> for RefinementChecker {
@@ -331,6 +411,7 @@ fn bfs_refinement<F>(
     spec: &CspmTransitionProvider,
     impl_: &CspmTransitionProvider,
     mut node_check: F,
+    mut next_closure_cache: Option<&mut NextClosureCache>,
 ) -> RefinementOutcome
 where
     F: FnMut(&NodeKey, &[State], &[State], &HashMap<NodeKey, (NodeKey, String)>) -> NodeAction,
@@ -378,8 +459,16 @@ where
         for label in labels {
             transitions_count += 1;
 
-            let impl_next = next_by_label(impl_, &impl_closure.states, &label);
-            let spec_next = next_by_label(spec, &spec_closure.states, &label);
+            let impl_next = if let Some(cache) = next_closure_cache.as_deref_mut() {
+                cache.next_by_label(ProviderSide::Impl, impl_, &impl_closure, &label)
+            } else {
+                next_by_label(impl_, &impl_closure.states, &label)
+            };
+            let spec_next = if let Some(cache) = next_closure_cache.as_deref_mut() {
+                cache.next_by_label(ProviderSide::Spec, spec, &spec_closure, &label)
+            } else {
+                next_by_label(spec, &spec_closure.states, &label)
+            };
             if spec_next.states.is_empty() {
                 let mut trace = reconstruct_trace(&predecessor, &node_key);
                 trace.push(label);
@@ -428,6 +517,7 @@ fn trace_includes(
         spec,
         impl_,
         |_node_key, _impl_states, _spec_states, _pred| NodeAction::Continue,
+        None,
     )
 }
 
@@ -435,79 +525,101 @@ fn failures_includes(
     spec: &CspmTransitionProvider,
     impl_: &CspmTransitionProvider,
 ) -> RefinementOutcome {
-    bfs_refinement(spec, impl_, |node_key, impl_states, spec_states, pred| {
-        let spec_stable_offers = stable_offer_sets(spec, spec_states);
+    bfs_refinement(
+        spec,
+        impl_,
+        |node_key, impl_states, spec_states, pred| {
+            let spec_stable_offers = stable_offer_sets(spec, spec_states);
 
-        for impl_state in impl_states {
-            if !is_stable(impl_, impl_state) {
-                continue;
-            }
-            let impl_offer = offered_visible_labels(impl_, impl_state);
-            let ok = spec_stable_offers
-                .iter()
-                .any(|spec_offer| spec_offer.is_subset(&impl_offer));
-            if ok {
-                continue;
-            }
+            for impl_state in impl_states {
+                if !is_stable(impl_, impl_state) {
+                    continue;
+                }
+                let impl_offer = offered_visible_labels(impl_, impl_state);
+                let ok = spec_stable_offers
+                    .iter()
+                    .any(|spec_offer| spec_offer.is_subset(&impl_offer));
+                if ok {
+                    continue;
+                }
 
-            return NodeAction::Fail(RefinementFailure {
-                trace: reconstruct_trace(pred, node_key),
-                tags: refusal_mismatch_tags(&spec_stable_offers, &impl_offer),
-            });
-        }
-        NodeAction::Continue
-    })
+                return NodeAction::Fail(RefinementFailure {
+                    trace: reconstruct_trace(pred, node_key),
+                    tags: refusal_mismatch_tags(&spec_stable_offers, &impl_offer),
+                });
+            }
+            NodeAction::Continue
+        },
+        None,
+    )
 }
 
 fn failures_divergences_includes(
     spec: &CspmTransitionProvider,
     impl_: &CspmTransitionProvider,
 ) -> RefinementOutcome {
+    let mut next_closure_cache = NextClosureCache::default();
+    let mut divergence_cache = DivergenceCache::default();
     let mut divergence_checks = 0u64;
     let mut divergence_prunes = 0u64;
     let mut impl_closure_max = 0u64;
     let mut spec_closure_max = 0u64;
 
-    let mut outcome = bfs_refinement(spec, impl_, |node_key, impl_states, spec_states, pred| {
-        impl_closure_max = impl_closure_max.max(impl_states.len() as u64);
-        spec_closure_max = spec_closure_max.max(spec_states.len() as u64);
-        divergence_checks = divergence_checks.saturating_add(2);
+    let mut outcome = bfs_refinement(
+        spec,
+        impl_,
+        |node_key, impl_states, spec_states, pred| {
+            impl_closure_max = impl_closure_max.max(impl_states.len() as u64);
+            spec_closure_max = spec_closure_max.max(spec_states.len() as u64);
+            divergence_checks = divergence_checks.saturating_add(2);
 
-        let spec_diverges = closure_has_tau_cycle(spec, spec_states);
-        let impl_diverges = closure_has_tau_cycle(impl_, impl_states);
-        if impl_diverges && !spec_diverges {
-            let mut trace = reconstruct_trace(pred, node_key);
-            trace.push(TAU.to_string());
-            return NodeAction::Fail(RefinementFailure {
-                trace,
-                tags: vec!["divergence_mismatch".to_string(), "divergence".to_string()],
-            });
-        }
-        if spec_diverges {
-            divergence_prunes = divergence_prunes.saturating_add(1);
-            return NodeAction::Prune;
-        }
-
-        let spec_stable_offers = stable_offer_sets(spec, spec_states);
-        for impl_state in impl_states {
-            if !is_stable(impl_, impl_state) {
-                continue;
+            let spec_diverges = divergence_cache.has_tau_cycle(
+                ProviderSide::Spec,
+                &node_key.spec_sig,
+                spec,
+                spec_states,
+            );
+            let impl_diverges = divergence_cache.has_tau_cycle(
+                ProviderSide::Impl,
+                &node_key.impl_sig,
+                impl_,
+                impl_states,
+            );
+            if impl_diverges && !spec_diverges {
+                let mut trace = reconstruct_trace(pred, node_key);
+                trace.push(TAU.to_string());
+                return NodeAction::Fail(RefinementFailure {
+                    trace,
+                    tags: vec!["divergence_mismatch".to_string(), "divergence".to_string()],
+                });
             }
-            let impl_offer = offered_visible_labels(impl_, impl_state);
-            let ok = spec_stable_offers
-                .iter()
-                .any(|spec_offer| spec_offer.is_subset(&impl_offer));
-            if ok {
-                continue;
+            if spec_diverges {
+                divergence_prunes = divergence_prunes.saturating_add(1);
+                return NodeAction::Prune;
             }
-            return NodeAction::Fail(RefinementFailure {
-                trace: reconstruct_trace(pred, node_key),
-                tags: refusal_mismatch_tags(&spec_stable_offers, &impl_offer),
-            });
-        }
 
-        NodeAction::Continue
-    });
+            let spec_stable_offers = stable_offer_sets(spec, spec_states);
+            for impl_state in impl_states {
+                if !is_stable(impl_, impl_state) {
+                    continue;
+                }
+                let impl_offer = offered_visible_labels(impl_, impl_state);
+                let ok = spec_stable_offers
+                    .iter()
+                    .any(|spec_offer| spec_offer.is_subset(&impl_offer));
+                if ok {
+                    continue;
+                }
+                return NodeAction::Fail(RefinementFailure {
+                    trace: reconstruct_trace(pred, node_key),
+                    tags: refusal_mismatch_tags(&spec_stable_offers, &impl_offer),
+                });
+            }
+
+            NodeAction::Continue
+        },
+        Some(&mut next_closure_cache),
+    );
 
     outcome.diagnostic_tags = vec![
         format!("fd_nodes:{}", outcome.stats.states.unwrap_or_default()),
@@ -516,6 +628,10 @@ fn failures_divergences_includes(
         format!("fd_pruned_nodes:{divergence_prunes}"),
         format!("fd_impl_closure_max:{impl_closure_max}"),
         format!("fd_spec_closure_max:{spec_closure_max}"),
+        format!("fd_closure_cache_hits:{}", next_closure_cache.hits),
+        format!("fd_closure_cache_misses:{}", next_closure_cache.misses),
+        format!("fd_divergence_cache_hits:{}", divergence_cache.hits),
+        format!("fd_divergence_cache_misses:{}", divergence_cache.misses),
     ];
     outcome
 }

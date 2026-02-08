@@ -901,6 +901,10 @@ struct DivergenceRunSummary {
     fd_pruned_nodes: Option<u64>,
     fd_impl_closure_max: Option<u64>,
     fd_spec_closure_max: Option<u64>,
+    fd_closure_cache_hits: Option<u64>,
+    fd_closure_cache_misses: Option<u64>,
+    fd_divergence_cache_hits: Option<u64>,
+    fd_divergence_cache_misses: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -911,6 +915,10 @@ struct DivergenceAggregateSummary {
     fd_pruned_nodes: AggregateValue,
     fd_impl_closure_max: AggregateValue,
     fd_spec_closure_max: AggregateValue,
+    fd_closure_cache_hits: AggregateValue,
+    fd_closure_cache_misses: AggregateValue,
+    fd_divergence_cache_hits: AggregateValue,
+    fd_divergence_cache_misses: AggregateValue,
 }
 
 fn run_problem(
@@ -1204,6 +1212,13 @@ fn extract_divergence_metrics(result_json: &JsonValue) -> Option<DivergenceRunSu
         fd_pruned_nodes: extract_fd_tag_metric(result_json, "fd_pruned_nodes"),
         fd_impl_closure_max: extract_fd_tag_metric(result_json, "fd_impl_closure_max"),
         fd_spec_closure_max: extract_fd_tag_metric(result_json, "fd_spec_closure_max"),
+        fd_closure_cache_hits: extract_fd_tag_metric(result_json, "fd_closure_cache_hits"),
+        fd_closure_cache_misses: extract_fd_tag_metric(result_json, "fd_closure_cache_misses"),
+        fd_divergence_cache_hits: extract_fd_tag_metric(result_json, "fd_divergence_cache_hits"),
+        fd_divergence_cache_misses: extract_fd_tag_metric(
+            result_json,
+            "fd_divergence_cache_misses",
+        ),
     };
     if summary.fd_nodes.is_none()
         && summary.fd_edges.is_none()
@@ -1211,6 +1226,10 @@ fn extract_divergence_metrics(result_json: &JsonValue) -> Option<DivergenceRunSu
         && summary.fd_pruned_nodes.is_none()
         && summary.fd_impl_closure_max.is_none()
         && summary.fd_spec_closure_max.is_none()
+        && summary.fd_closure_cache_hits.is_none()
+        && summary.fd_closure_cache_misses.is_none()
+        && summary.fd_divergence_cache_hits.is_none()
+        && summary.fd_divergence_cache_misses.is_none()
     {
         return None;
     }
@@ -1285,6 +1304,38 @@ fn build_divergence_aggregate(runs: &[MeasuredRunSummary]) -> Option<DivergenceA
                 .and_then(|value| value.fd_spec_closure_max)
         })
         .collect::<Vec<_>>();
+    let fd_closure_cache_hits = runs
+        .iter()
+        .filter_map(|run| {
+            run.divergence
+                .as_ref()
+                .and_then(|value| value.fd_closure_cache_hits)
+        })
+        .collect::<Vec<_>>();
+    let fd_closure_cache_misses = runs
+        .iter()
+        .filter_map(|run| {
+            run.divergence
+                .as_ref()
+                .and_then(|value| value.fd_closure_cache_misses)
+        })
+        .collect::<Vec<_>>();
+    let fd_divergence_cache_hits = runs
+        .iter()
+        .filter_map(|run| {
+            run.divergence
+                .as_ref()
+                .and_then(|value| value.fd_divergence_cache_hits)
+        })
+        .collect::<Vec<_>>();
+    let fd_divergence_cache_misses = runs
+        .iter()
+        .filter_map(|run| {
+            run.divergence
+                .as_ref()
+                .and_then(|value| value.fd_divergence_cache_misses)
+        })
+        .collect::<Vec<_>>();
 
     if fd_nodes.is_empty()
         && fd_edges.is_empty()
@@ -1292,6 +1343,10 @@ fn build_divergence_aggregate(runs: &[MeasuredRunSummary]) -> Option<DivergenceA
         && fd_pruned_nodes.is_empty()
         && fd_impl_closure_max.is_empty()
         && fd_spec_closure_max.is_empty()
+        && fd_closure_cache_hits.is_empty()
+        && fd_closure_cache_misses.is_empty()
+        && fd_divergence_cache_hits.is_empty()
+        && fd_divergence_cache_misses.is_empty()
     {
         return None;
     }
@@ -1303,6 +1358,10 @@ fn build_divergence_aggregate(runs: &[MeasuredRunSummary]) -> Option<DivergenceA
         fd_pruned_nodes: aggregate_u64(&fd_pruned_nodes),
         fd_impl_closure_max: aggregate_u64(&fd_impl_closure_max),
         fd_spec_closure_max: aggregate_u64(&fd_spec_closure_max),
+        fd_closure_cache_hits: aggregate_u64(&fd_closure_cache_hits),
+        fd_closure_cache_misses: aggregate_u64(&fd_closure_cache_misses),
+        fd_divergence_cache_hits: aggregate_u64(&fd_divergence_cache_hits),
+        fd_divergence_cache_misses: aggregate_u64(&fd_divergence_cache_misses),
     })
 }
 
