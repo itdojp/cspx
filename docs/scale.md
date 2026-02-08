@@ -210,7 +210,6 @@ deterministic mode は「スケジュールに依存しない探索順」を仕�
 - baseline は `benchmarks/baseline/bench-metrics-baseline.json` を repo 管理とする。
 - workflow_dispatch の `update_baseline_candidate=true` で候補 JSON を artifact 出力し、PR で更新する。
 - 詳細運用は `docs/bench-baseline.md` を参照。
-
 ## 探索ホットパス可視化（WS4-A / v0.2）
 ### 目的
 - 探索エンジンの最適化対象を定量化し、WS4-B/WS5 の優先順位を機械的に決める。
@@ -248,3 +247,8 @@ deterministic mode は「スケジュールに依存しない探索順」を仕�
 - `frontier_maintenance_ns`: `22,786,045` -> `16,784,140`（`-26.34%`）
 - `visited_insert_ns`: `333,676` -> `371,466`（`+11.33%`、次段 WS5 で最適化対象）
 - `estimated_wait_ns`: `11,128,346` -> `14,494,973`（`+30.25%`、負荷偏りの追加分析は WS6 で扱う）
+
+## FD最適化バックログ（WS6-B）
+- WS6-A（`#121`）の計測導線を基準に、WS6-B の優先順位付き backlog を定義した。
+- 優先順は `#134`（P1） -> `#135`（P2） -> `#136`（P3）。
+- 評価軸・検証条件・撤退条件は `docs/fd-optimization-backlog.md` を参照する。
