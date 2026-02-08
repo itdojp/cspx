@@ -252,3 +252,4 @@ deterministic mode は「スケジュールに依存しない探索順」を仕�
 - WS6-A（`#121`）の計測導線を基準に、WS6-B の優先順位付き backlog を定義した。
 - 優先順は `#134`（P1） -> `#135`（P2） -> `#136`（P3）。
 - 評価軸・検証条件・撤退条件は `docs/fd-optimization-backlog.md` を参照する。
+- `#136` の並列化/POR 事前検証テンプレートは `docs/fd-parallel-por-spike.md` を参照する。
