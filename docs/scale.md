@@ -166,3 +166,8 @@ deterministic mode は「スケジュールに依存しない探索順」を仕�
 - baseline は `benchmarks/baseline/bench-metrics-baseline.json` を repo 管理とする。
 - workflow_dispatch の `update_baseline_candidate=true` で候補 JSON を artifact 出力し、PR で更新する。
 - 詳細運用は `docs/bench-baseline.md` を参照。
+
+## FD最適化バックログ（WS6-B）
+- WS6-A（`#121`）の計測導線を基準に、WS6-B の優先順位付き backlog を定義した。
+- 優先順は `#134`（P1） -> `#135`（P2） -> `#136`（P3）。
+- 評価軸・検証条件・撤退条件は `docs/fd-optimization-backlog.md` を参照する。
