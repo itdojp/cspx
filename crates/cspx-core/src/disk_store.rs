@@ -5,6 +5,8 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, BufRead, BufReader, Write};
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::{Duration, Instant};
 
 const INDEX_MAGIC: &str = "cspx-disk-index-v1";
 
@@ -59,6 +61,47 @@ impl Drop for LockGuard {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DiskStateStoreOpenOptions {
+    pub lock_retry_count: u32,
+    pub lock_retry_backoff: Duration,
+}
+
+impl Default for DiskStateStoreOpenOptions {
+    fn default() -> Self {
+        Self {
+            lock_retry_count: 0,
+            lock_retry_backoff: Duration::ZERO,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DiskStateStoreMetrics {
+    pub open_ns: u64,
+    pub lock_wait_ns: u64,
+    pub lock_contention_events: u64,
+    pub lock_retries: u64,
+    pub index_load_ns: u64,
+    pub index_rebuild_ns: u64,
+    pub index_entries_loaded: u64,
+    pub index_entries_rebuilt: u64,
+    pub log_read_bytes: u64,
+    pub index_read_bytes: u64,
+    pub insert_calls: u64,
+    pub insert_collisions: u64,
+    pub log_write_ns: u64,
+    pub log_write_bytes: u64,
+    pub index_write_ns: u64,
+    pub index_write_bytes: u64,
+}
+
+impl DiskStateStoreMetrics {
+    pub fn total_written_bytes(&self) -> u64 {
+        self.log_write_bytes.saturating_add(self.index_write_bytes)
+    }
+}
+
 #[derive(Debug)]
 pub struct DiskStateStore<S, C>
 where
@@ -67,6 +110,7 @@ where
     paths: StorePaths,
     codec: C,
     index: HashSet<Vec<u8>>,
+    metrics: DiskStateStoreMetrics,
     _lock: LockGuard,
     _marker: PhantomData<S>,
 }
@@ -76,6 +120,15 @@ where
     C: StateCodec<S>,
 {
     pub fn open(path: impl AsRef<Path>, codec: C) -> std::io::Result<Self> {
+        Self::open_with_options(path, codec, DiskStateStoreOpenOptions::default())
+    }
+
+    pub fn open_with_options(
+        path: impl AsRef<Path>,
+        codec: C,
+        options: DiskStateStoreOpenOptions,
+    ) -> io::Result<Self> {
+        let open_start = Instant::now();
         let paths = StorePaths::new(path.as_ref().to_path_buf());
         if let Some(parent) = paths
             .log_path
@@ -84,7 +137,29 @@ where
         {
             fs::create_dir_all(parent)?;
         }
-        let lock = LockGuard::acquire(&paths.lock_path)?;
+
+        let lock_wait_start = Instant::now();
+        let mut contention_events = 0u64;
+        let mut retries = 0u64;
+        let lock = loop {
+            match LockGuard::acquire(&paths.lock_path) {
+                Ok(lock) => break lock,
+                Err(err)
+                    if err.kind() == io::ErrorKind::WouldBlock
+                        && retries < u64::from(options.lock_retry_count) =>
+                {
+                    contention_events = contention_events.saturating_add(1);
+                    retries = retries.saturating_add(1);
+                    if options.lock_retry_backoff.is_zero() {
+                        thread::yield_now();
+                    } else {
+                        thread::sleep(options.lock_retry_backoff);
+                    }
+                }
+                Err(err) => return Err(err),
+            }
+        };
+
         let log_file = OpenOptions::new()
             .create(true)
             .read(true)
@@ -92,23 +167,56 @@ where
             .truncate(false)
             .open(&paths.log_path)?;
         let log_len = log_file.metadata()?.len();
+
+        let mut metrics = DiskStateStoreMetrics {
+            lock_wait_ns: duration_ns(lock_wait_start.elapsed()),
+            lock_contention_events: contention_events,
+            lock_retries: retries,
+            ..DiskStateStoreMetrics::default()
+        };
+
+        let index_load_start = Instant::now();
         let index = match load_index_from_file(&paths.idx_path, &codec, log_len)? {
-            Some(index) => index,
+            Some(index) => {
+                metrics.index_entries_loaded = usize_to_u64(index.len())?;
+                metrics.index_read_bytes = fs::metadata(&paths.idx_path)
+                    .map(|metadata| metadata.len())
+                    .unwrap_or_default();
+                index
+            }
             None => {
+                metrics.log_read_bytes = log_len;
+                let rebuild_start = Instant::now();
                 let (rebuilt, normalized_log_len) =
                     rebuild_index_from_log(&paths.log_path, &codec)?;
-                write_index_file(&paths.idx_path, &rebuilt, normalized_log_len)?;
+                metrics.index_rebuild_ns = duration_ns(rebuild_start.elapsed());
+                metrics.index_entries_rebuilt = usize_to_u64(rebuilt.len())?;
+
+                let index_write_start = Instant::now();
+                let bytes_written =
+                    write_index_file(&paths.idx_path, &rebuilt, normalized_log_len)?;
+                metrics.index_write_ns = metrics
+                    .index_write_ns
+                    .saturating_add(duration_ns(index_write_start.elapsed()));
+                metrics.index_write_bytes = metrics.index_write_bytes.saturating_add(bytes_written);
                 rebuilt
             }
         };
+        metrics.index_load_ns = duration_ns(index_load_start.elapsed());
+        metrics.open_ns = duration_ns(open_start.elapsed());
 
         Ok(Self {
             paths,
             codec,
             index,
+            metrics,
             _lock: lock,
             _marker: PhantomData,
         })
+    }
+
+    pub fn metrics(&self) -> &DiskStateStoreMetrics {
+        &self.metrics
     }
 }
 
@@ -117,14 +225,38 @@ where
     C: StateCodec<S>,
 {
     fn insert(&mut self, state: S) -> std::io::Result<bool> {
+        self.metrics.insert_calls = self.metrics.insert_calls.saturating_add(1);
         let bytes = self.codec.encode(&state);
         if self.index.contains(&bytes) {
+            self.metrics.insert_collisions = self.metrics.insert_collisions.saturating_add(1);
             return Ok(false);
         }
 
-        let log_len = append_log_record(&self.paths.log_path, &bytes)?;
+        let log_write_start = Instant::now();
+        let append = append_log_record(&self.paths.log_path, &bytes)?;
+        self.metrics.log_write_ns = self
+            .metrics
+            .log_write_ns
+            .saturating_add(duration_ns(log_write_start.elapsed()));
+        self.metrics.log_write_bytes = self
+            .metrics
+            .log_write_bytes
+            .saturating_add(append.written_bytes);
+
         self.index.insert(bytes.clone());
-        if let Err(err) = write_index_file(&self.paths.idx_path, &self.index, log_len) {
+        let index_write_start = Instant::now();
+        let write_result = write_index_file(&self.paths.idx_path, &self.index, append.log_len);
+        self.metrics.index_write_ns = self
+            .metrics
+            .index_write_ns
+            .saturating_add(duration_ns(index_write_start.elapsed()));
+        if let Ok(bytes_written) = write_result.as_ref() {
+            self.metrics.index_write_bytes = self
+                .metrics
+                .index_write_bytes
+                .saturating_add(*bytes_written);
+        }
+        if let Err(err) = write_result {
             self.index.remove(&bytes);
             return Err(err);
         }
@@ -136,11 +268,20 @@ where
     }
 }
 
-fn append_log_record(path: &Path, bytes: &[u8]) -> io::Result<u64> {
+struct AppendLogResult {
+    log_len: u64,
+    written_bytes: u64,
+}
+
+fn append_log_record(path: &Path, bytes: &[u8]) -> io::Result<AppendLogResult> {
     let mut file = OpenOptions::new().create(true).append(true).open(path)?;
-    writeln!(file, "{}", hex::encode(bytes))?;
+    let encoded = hex::encode(bytes);
+    writeln!(file, "{encoded}")?;
     file.flush()?;
-    Ok(file.metadata()?.len())
+    Ok(AppendLogResult {
+        log_len: file.metadata()?.len(),
+        written_bytes: (encoded.len() as u64).saturating_add(1),
+    })
 }
 
 fn load_index_from_file<S, C>(
@@ -236,24 +377,28 @@ where
     Ok((index, normalized_len))
 }
 
-fn write_index_file(path: &Path, index: &HashSet<Vec<u8>>, log_len: u64) -> io::Result<()> {
+fn write_index_file(path: &Path, index: &HashSet<Vec<u8>>, log_len: u64) -> io::Result<u64> {
     let tmp_path = path.with_extension("idx.tmp");
     let mut file = fs::File::create(&tmp_path)?;
-    writeln!(file, "{INDEX_MAGIC} log_len={log_len}")?;
+    let mut written_bytes = 0u64;
+    let header = format!("{INDEX_MAGIC} log_len={log_len}");
+    writeln!(file, "{header}")?;
+    written_bytes = written_bytes.saturating_add((header.len() as u64).saturating_add(1));
 
     let mut records = index.iter().map(hex::encode).collect::<Vec<_>>();
     records.sort();
     for record in records {
         writeln!(file, "{record}")?;
+        written_bytes = written_bytes.saturating_add((record.len() as u64).saturating_add(1));
     }
     file.flush()?;
 
     match fs::rename(&tmp_path, path) {
-        Ok(()) => Ok(()),
+        Ok(()) => Ok(written_bytes),
         Err(err) if err.kind() == io::ErrorKind::AlreadyExists => {
             fs::remove_file(path)?;
             fs::rename(&tmp_path, path)?;
-            Ok(())
+            Ok(written_bytes)
         }
         Err(err) => {
             let _ = fs::remove_file(&tmp_path);
@@ -276,4 +421,12 @@ where
 
 fn usize_to_u64(value: usize) -> io::Result<u64> {
     u64::try_from(value).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "size overflow"))
+}
+
+fn duration_ns(duration: Duration) -> u64 {
+    duration
+        .as_nanos()
+        .min(u128::from(u64::MAX))
+        .try_into()
+        .unwrap_or(u64::MAX)
 }

@@ -54,6 +54,18 @@
 - `open` で `state.lock` を `create_new` し、取得できない場合は `WouldBlock` で失敗させる。
 - プロセス正常終了時は lock を削除する（異常終了で lock が残る場合は手動削除が必要）。
 
+### WS5-A 計測（v0.2）
+`DiskStateStore::metrics()` で、次の観測値を取得する。
+
+- `open_ns`, `lock_wait_ns`, `lock_contention_events`, `lock_retries`
+- `index_load_ns`, `index_rebuild_ns`, `index_entries_loaded`, `index_entries_rebuilt`
+- `log_read_bytes`, `index_read_bytes`
+- `insert_calls`, `insert_collisions`
+- `log_write_ns`, `log_write_bytes`, `index_write_ns`, `index_write_bytes`
+
+代表負荷の取得は `cargo run -q -p cspx-core --example store_profile_compare` を使用する。
+同一ワークロードで `InMemoryStateStore` と `DiskStateStore` を比較し、WS5-B の最適化優先順位（I/O vs 衝突 vs lock）を判断する。
+
 ### v0.3+ 要件（高度化）
 現行 v0.2 実装（lock file 排他、hex index）を踏まえ、将来の高度化要件を以下に示す。
 

@@ -29,7 +29,7 @@ pub use check_deadlock::DeadlockChecker;
 pub use check_determinism::DeterminismChecker;
 pub use check_divergence::DivergenceChecker;
 pub use check_refine::{RefinementChecker, RefinementInput};
-pub use disk_store::DiskStateStore;
+pub use disk_store::{DiskStateStore, DiskStateStoreMetrics, DiskStateStoreOpenOptions};
 pub use explain::Explainer;
 pub use explain_simple::BasicExplainer;
 pub use explore::{
