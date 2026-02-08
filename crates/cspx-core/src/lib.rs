@@ -33,7 +33,9 @@ pub use disk_store::DiskStateStore;
 pub use explain::Explainer;
 pub use explain_simple::BasicExplainer;
 pub use explore::{
-    explore, explore_parallel, explore_parallel_with_options, ParallelExploreOptions,
+    explore, explore_parallel, explore_parallel_profiled, explore_parallel_profiled_with_options,
+    explore_parallel_with_options, explore_profiled, ExploreHotspotProfile, ExploreProfileMode,
+    ParallelExploreOptions,
 };
 pub use frontend::{Frontend, FrontendOutput};
 pub use frontend_simple::{FrontendError, FrontendErrorKind, SimpleFrontend};

@@ -166,3 +166,25 @@ deterministic mode は「スケジュールに依存しない探索順」を仕�
 - baseline は `benchmarks/baseline/bench-metrics-baseline.json` を repo 管理とする。
 - workflow_dispatch の `update_baseline_candidate=true` で候補 JSON を artifact 出力し、PR で更新する。
 - 詳細運用は `docs/bench-baseline.md` を参照。
+
+## 探索ホットパス可視化（WS4-A / v0.2）
+### 目的
+- 探索エンジンの最適化対象を定量化し、WS4-B/WS5 の優先順位を機械的に決める。
+- 計測 ON/OFF を切替可能にし、既存の検査結果への影響がないことを担保する。
+
+### 計測の有効化
+- `cspx typecheck ... --explore-profile` を指定すると、Result JSON の `metrics.explore_hotspots` が出力される。
+- 未指定時は `metrics.explore_hotspots` を出力しない（従来互換）。
+
+### 計測項目
+- `state_generation_ms`: `TransitionProvider::transitions` 実行時間（CPU寄り）
+- `state_generation_wall_ms`: 並列時の state 生成 wall time
+- `visited_insert_ms`: visited/store への insert 時間（DiskStore では I/Oを含む）
+- `frontier_maintenance_ms`: frontier sort / dedup 時間
+- `estimated_wait_ms`: 並列時の概算待機時間（`workers * wall - busy`）
+- `hotspots`: 時間降順の上位フェーズ（`priority`, `time_ms`, `ratio_pct`）
+
+### WS4-B/WS5 への受け渡し
+- `hotspots[0]` が `state_generation` 優位なら WS4-B（探索処理）を先行する。
+- `hotspots[0]` が `visited_insert` 優位なら WS5（Disk/Hybrid store）を先行する。
+- `frontier_maintenance` 優位なら deterministic 探索の frontier 正規化・dedup を最適化対象にする。

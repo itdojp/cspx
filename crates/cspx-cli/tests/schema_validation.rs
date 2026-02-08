@@ -37,6 +37,26 @@ fn schema_typecheck() {
 }
 
 #[test]
+fn schema_typecheck_with_explore_profile() {
+    let schema = load_schema();
+    let actual = run_json(&[
+        "typecheck",
+        "tests/cases/ok.cspm",
+        "--parallel",
+        "2",
+        "--deterministic",
+        "--seed",
+        "1",
+        "--explore-profile",
+        "--format",
+        "json",
+    ]);
+    let result = schema.validate(&actual);
+    assert!(result.is_ok());
+    assert!(actual["metrics"]["explore_hotspots"].is_object());
+}
+
+#[test]
 fn schema_check_assert() {
     let schema = load_schema();
     let actual = run_json(&[
