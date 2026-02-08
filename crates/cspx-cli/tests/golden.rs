@@ -34,6 +34,14 @@ fn strip_volatile_fields(mut value: Value) -> Value {
         if let Some(Value::Object(tool)) = map.get_mut("tool") {
             tool.remove("git_sha");
         }
+        if let Some(Value::Object(metrics)) = map.get_mut("metrics") {
+            metrics.remove("wall_time_ms");
+            metrics.remove("cpu_time_ms");
+            metrics.remove("peak_rss_bytes");
+            metrics.remove("disk_bytes");
+            metrics.remove("states_per_sec");
+            metrics.remove("transitions_per_sec");
+        }
     }
     value
 }

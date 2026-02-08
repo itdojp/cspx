@@ -141,6 +141,12 @@ checks:
 - `finished_at`
 - `duration_ms`
 - `tool.git_sha`
+- `metrics.wall_time_ms`
+- `metrics.cpu_time_ms`
+- `metrics.peak_rss_bytes`
+- `metrics.disk_bytes`
+- `metrics.states_per_sec`
+- `metrics.transitions_per_sec`
 
 追加で除外したいフィールドは `compare.ignore_fields` に **ドット区切りパス** で指定する。
 ```yaml

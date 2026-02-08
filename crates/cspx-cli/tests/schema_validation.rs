@@ -80,3 +80,15 @@ fn schema_refine() {
     let result = schema.validate(&actual);
     assert!(result.is_ok());
 }
+
+#[test]
+fn schema_accepts_legacy_payload_without_metrics() {
+    let schema = load_schema();
+    let mut actual = run_json(&["typecheck", "tests/cases/ok.cspm", "--format", "json"]);
+    actual
+        .as_object_mut()
+        .expect("result should be object")
+        .remove("metrics");
+    let result = schema.validate(&actual);
+    assert!(result.is_ok());
+}
