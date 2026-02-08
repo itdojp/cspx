@@ -1,7 +1,7 @@
-id: P900
-title: ring (tiny, generated bench)
+id: P903
+title: ring (medium, generated bench)
 suite: bench
-tags: [bench, generated, ring, tiny]
+tags: [bench, generated, ring, medium]
 run:
   cmd: ["cspx", "check", "--assert", "deadlock free", "model.cspm", "--format", "json"]
-  timeout_ms: 10000
+  timeout_ms: 30000

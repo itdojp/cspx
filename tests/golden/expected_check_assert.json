@@ -1,9 +1,15 @@
 {
   "schema_version": "0.1",
-  "tool": { "name": "cspx", "version": "0.1.0", "git_sha": "UNKNOWN" },
+  "tool": {
+    "name": "cspx",
+    "version": "0.1.0",
+    "git_sha": "UNKNOWN"
+  },
   "invocation": {
     "command": "check",
-    "args": ["tests/cases/ok.cspm"],
+    "args": [
+      "tests/cases/ok.cspm"
+    ],
     "format": "json",
     "timeout_ms": null,
     "memory_mb": null,
@@ -12,12 +18,15 @@
     "seed": 0
   },
   "inputs": [
-    { "path": "tests/cases/ok.cspm", "sha256": "2af183be253fd571e13dd3d310357f3a1ccc7b18502a83ed918e0b88a1e5355f" }
+    {
+      "path": "tests/cases/ok.cspm",
+      "sha256": "2af183be253fd571e13dd3d310357f3a1ccc7b18502a83ed918e0b88a1e5355f"
+    }
   ],
   "status": "fail",
   "exit_code": 1,
-  "started_at": "1970-01-01T00:00:00Z",
-  "finished_at": "1970-01-01T00:00:00Z",
+  "started_at": "2026-02-07T09:13:00Z",
+  "finished_at": "2026-02-07T09:13:00Z",
   "duration_ms": 0,
   "checks": [
     {
@@ -29,12 +38,40 @@
         "type": "trace",
         "events": [],
         "is_minimized": false,
-        "tags": ["deadlock", "kind:deadlock", "explained"],
+        "tags": [
+          "deadlock",
+          "kind:deadlock",
+          "explained"
+        ],
         "source_spans": [
-          { "path": "tests/cases/ok.cspm", "start_line": 1, "start_col": 1, "end_line": 1, "end_col": 4 }
+          {
+            "path": "tests/cases/ok.cspm",
+            "start_line": 1,
+            "start_col": 1,
+            "end_line": 1,
+            "end_col": 4
+          }
         ]
       },
-      "stats": { "states": 1, "transitions": 0 }
+      "stats": {
+        "states": 1,
+        "transitions": 0
+      }
     }
-  ]
+  ],
+  "metrics": {
+    "states": 1,
+    "transitions": 0,
+    "wall_time_ms": 0,
+    "cpu_time_ms": null,
+    "peak_rss_bytes": null,
+    "disk_bytes": null,
+    "states_per_sec": null,
+    "transitions_per_sec": null,
+    "parallelism": {
+      "threads": 1,
+      "deterministic": false,
+      "seed": 0
+    }
+  }
 }

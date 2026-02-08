@@ -1,0 +1,7 @@
+id: P904
+title: philosopher loops interleaving (medium, generated bench)
+suite: bench
+tags: [bench, generated, interleaving, philosopher_loops, medium]
+run:
+  cmd: ["cspx", "check", "--assert", "deadlock free", "model.cspm", "--format", "json"]
+  timeout_ms: 30000

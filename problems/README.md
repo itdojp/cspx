@@ -17,9 +17,20 @@ cargo build -p cspx
 scripts/run-problems --suite fast --cspx target/debug/cspx
 ```
 
+### bench suite をローカルで実行
+```sh
+cargo build -p cspx --release
+scripts/run-problems --suite bench --cspx target/release/cspx
+```
+
 ### 問題一覧を表示
 ```sh
 scripts/run-problems --suite fast --list
+```
+
+### bench 問題一覧を表示
+```sh
+scripts/run-problems --suite bench --list
 ```
 
 ### 特定問題のみ実行（ID 指定）
@@ -38,6 +49,42 @@ scripts/run-problems --cspx target/debug/cspx --only-dir problems/P000_hello_typ
 - `--suite fast|bench`: suite フィルタ（デフォルト: `fast`）
 - `--cspx <path>`: `run.cmd[0] == "cspx"` の場合に `cspx` 実体を差し替える（例: `target/debug/cspx`）
 - `--jobs <n>`: 並列実行（問題単位、出力順は ID 昇順で安定化）
+- `--measure-runs <n>`: 問題ごとの測定 run 回数（デフォルト: `1`）
+- `--warmup-runs <n>`: 測定前のウォームアップ run 回数（デフォルト: `0`）
+
+## suite 運用規約（fast / bench）
+### 目的
+- `fast`: PR/Push CI で常時実行する回帰検知
+- `bench`: 性能計測・スケール観測用（常時CIには載せない）
+
+### 追加規約（新規問題）
+- `suite` は `problem.yaml` に明示する（タグ推論に依存しない）
+- 新規 `bench` 問題の ID は原則 `P9xx` を使う（既存互換の例外を除く）
+- スケール題材の追加は `problems/generators/`（#112）で再生成可能にする
+
+### 実行条件
+- `fast` は開発中の即時確認を優先し、`target/debug/cspx` での実行を標準とする
+- `bench` は計測ノイズを抑えるため、`target/release/cspx` を標準とする
+- `bench` 実行時は必要に応じて `--jobs` を固定し、比較時の条件を揃える
+
+## bench 生成問題の運用（#112）
+### 再生成手順（`problems/generators`）
+1) `problems/generators/regenerate_p900_p905.sh` を実行し、`P900`〜`P905` の `model.cspm` を再生成する  
+2) `scripts/run-problems --suite bench --list` で対象問題（`P310`, `P900`〜`P905`）が列挙されることを確認する  
+3) `cargo build -p cspx --release` 後に `scripts/run-problems --suite bench --cspx target/release/cspx --only P900 --only P901 --only P902 --only P903 --only P904 --only P905` を実行する  
+4) `problems/.out/<P###>/report.txt` と差分（`model.cspm` / `problem.yaml` / `expect.yaml` / `notes.md`）をレビューする
+
+### 推奨パラメータレンジ（tiny / medium）
+- `ring(N)`: tiny=`4`, medium=`16`
+- `philosopher_loops(K)`: tiny=`3`, medium=`5`（shared fork を省略した interleaving 近似）
+- `ABP(M)`（送受信シーケンス上限）: tiny=`1`（`0..1`）, medium=`3`（`0..3`）
+
+### bench 実行時の timeout/失敗運用
+- `P900`〜`P905` は `run.timeout_ms` を明示し、計測時の暴走を防ぐ
+- `P310` は timeout 挙動観測用の placeholder として、`pass/timeout/unsupported/error` を許容する
+- `run.timeout_ms` に達した run は runner が kill し、`exit_code=124` を記録する（`cspx --timeout-ms` の exit code `4` とは別）
+- 期待値不一致が 1 件以上ある場合、`scripts/run-problems` 全体の終了コードは `1`。runner 内部エラー（読み込み/spawn 失敗等）の場合は `2`
+- `bench` の timeout/失敗は性能観測の入力として扱い、まず `problems/.out` で原因を切り分けた上で再計測する
 
 ## CI での実行
 GitHub Actions では以下を実行する（`.github/workflows/ci.yml`）。
@@ -46,6 +93,11 @@ cargo build -p cspx
 scripts/run-problems --suite fast --cspx target/debug/cspx
 ```
 失敗時は `problems/.out` を artifact（`problems-out`）として upload する。
+
+### CI 責務分離
+- `fast` のみを `ci.yml` の必須ジョブに含める
+- `bench` は別 workflow（nightly / manual、#115 / #116）またはローカルで運用する
+- PR では機能回帰検知を優先し、性能回帰検知は専用導線で扱う
 
 bench は `.github/workflows/bench.yml` で nightly（`schedule`）および手動（`workflow_dispatch`）実行する。
 - 実行ポリシー: `scripts/run-problems --suite bench --cspx target/release/cspx`
@@ -62,6 +114,7 @@ bench は `.github/workflows/bench.yml` で nightly（`schedule`）および手�
 - `problems/.out/<P###>/run-<N>/exit_code.txt`: プロセスの exit code
 - `problems/.out/<P###>/run-<N>/result.json`: stdout を JSON として parse できた場合の整形出力
 - `problems/.out/<P###>/run-<N>/normalized.json`: `compare` 用に正規化した JSON
+- `problems/.out/<P###>/metrics-summary.json`: 測定メタデータと集計（median/min/max）
 
 `result.json` が無い場合は stdout が JSON でない（または空）ことを示す。
 `expect.yaml` で `status` / `checks` を期待する場合、stdout が Result JSON（`--format json`）である必要がある。
@@ -91,12 +144,20 @@ checks:
 
 - `repeat`: `expect.yaml` を優先し、未指定の場合は `problem.yaml` の `run.repeat`、それも無ければ `1`
 - `compare.kind: normalized_json_equal`: `normalized.json` を run 間で比較する
+- CLI の `--measure-runs` は上記 `repeat` と比較して大きい方を採用する
+- 測定 run が 2 回以上あり、かつ全ての run で `invocation.deterministic=true` の場合、runner は正規化 JSON の同一性を追加検証する
 
 正規化（`normalized.json`）では以下のフィールドを常に除外する。
 - `started_at`
 - `finished_at`
 - `duration_ms`
 - `tool.git_sha`
+- `metrics.wall_time_ms`
+- `metrics.cpu_time_ms`
+- `metrics.peak_rss_bytes`
+- `metrics.disk_bytes`
+- `metrics.states_per_sec`
+- `metrics.transitions_per_sec`
 
 追加で除外したいフィールドは `compare.ignore_fields` に **ドット区切りパス** で指定する。
 ```yaml
@@ -112,6 +173,12 @@ compare:
 3) stdout が JSON でない場合は `problem.yaml` の `run.cmd` が `--format json` を指定しているか確認する  
 4) CI では failure artifact（`problems-out`）をダウンロードして同様に確認する
 
+## bench 計測ポリシー（#114）
+- 集計は **median** を基準値とし、`metrics-summary.json` に `min/median/max` を保存する
+- 外れ値の自動除外は行わない（`outlier_policy=none` を明示）
+- ノイズ確認は同一条件（入力・`--cspx`・`--jobs`・`--measure-runs`・`--warmup-runs`）で比較する
+- 例: `scripts/run-problems --suite bench --measure-runs 5 --warmup-runs 1 --cspx target/debug/cspx`
+
 ## ディレクトリ規約
 - 1問題 = 1ディレクトリ: `problems/P###_<slug>/`
 - 最低限以下のファイルを持つ
@@ -119,6 +186,7 @@ compare:
   - `problem.yaml`
   - `expect.yaml`
   - `notes.md`（任意）
+- 生成型の `bench` 問題は `problems/generators/` に生成ロジックと再生成手順（スクリプト/テンプレート）を置く
 
 ## `problem.yaml`
 ### 例
@@ -208,6 +276,15 @@ target: { contains: "deadlock free" }
 ## 関連ドキュメント
 - `docs/cli.md`（exit code 規約、timeout など）
 - `docs/result-json.md`（Result JSON 形状と status/reason）
+- `docs/scale.md`（Plan C: Scale/Performance の仕様）
+- `problems/generators/README.md`（bench 生成問題の再生成手順）
+
+## 関連 Issue（Plan C）
+- `#110`（Execution Epic）
+- `#112`（パラメトリック問題生成）
+- `#113`（metrics 拡張）
+- `#114`（計測ブレ対策 / deterministic 整合）
+- `#115`, `#116`（bench CI / baseline 比較）
 
 ## スキーマ
 - `schemas/problem.schema.json`
