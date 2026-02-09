@@ -64,9 +64,12 @@ enum NodeAction {
     Fail(RefinementFailure),
 }
 
+type NextClosureByLabel = HashMap<String, Closure>;
+type NextClosureBySig = HashMap<Vec<Vec<u8>>, NextClosureByLabel>;
+
 #[derive(Debug, Default)]
 struct NextClosureCache {
-    entries: HashMap<ProviderSide, HashMap<Vec<Vec<u8>>, HashMap<String, Closure>>>,
+    entries: HashMap<ProviderSide, NextClosureBySig>,
     hits: u64,
     misses: u64,
 }
@@ -99,9 +102,11 @@ impl NextClosureCache {
     }
 }
 
+type DivergenceBySig = HashMap<Vec<Vec<u8>>, bool>;
+
 #[derive(Debug, Default)]
 struct DivergenceCache {
-    entries: HashMap<ProviderSide, HashMap<Vec<Vec<u8>>, bool>>,
+    entries: HashMap<ProviderSide, DivergenceBySig>,
     hits: u64,
     misses: u64,
 }
