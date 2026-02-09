@@ -15,7 +15,7 @@
 
 ### 正当性リスク
 - 反例 trace の最短性/安定性が崩れる。
-- `fd_*` タグ（nodes/edges/pruned）の値定義が逐次実装と乖離する。
+- `fd_*` タグ（例: `fd_nodes` / `fd_edges` / `fd_pruned_nodes`。完全な一覧は `docs/scale.md` を参照）の値定義が逐次実装と乖離する。
 - shared cache 導入時に更新順序依存が混入する。
 
 ### 最低限の検証条件
