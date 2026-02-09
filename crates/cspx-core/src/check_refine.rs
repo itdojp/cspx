@@ -357,14 +357,28 @@ fn closure_has_tau_cycle(provider: &CspmTransitionProvider, closure_states: &[St
     if closure_states.is_empty() {
         return false;
     }
+    const WHITE: u8 = 0;
+    const GRAY: u8 = 1;
+    const BLACK: u8 = 2;
 
     let mut index_of = HashMap::<State, usize>::new();
     for (idx, state) in closure_states.iter().cloned().enumerate() {
         index_of.insert(state, idx);
     }
 
-    let mut adj: Vec<Vec<usize>> = vec![Vec::new(); closure_states.len()];
-    for (idx, state) in closure_states.iter().enumerate() {
+    #[derive(Debug)]
+    struct DfsFrame {
+        node: usize,
+        neighbors: Vec<usize>,
+        cursor: usize,
+    }
+
+    fn tau_successor_indices(
+        provider: &CspmTransitionProvider,
+        state: &State,
+        index_of: &HashMap<State, usize>,
+    ) -> Vec<usize> {
+        let mut out = Vec::new();
         for (transition, next_state) in provider.transitions(state) {
             if transition.label != TAU {
                 continue;
@@ -372,36 +386,52 @@ fn closure_has_tau_cycle(provider: &CspmTransitionProvider, closure_states: &[St
             let Some(next_idx) = index_of.get(&next_state).copied() else {
                 continue;
             };
-            adj[idx].push(next_idx);
+            out.push(next_idx);
         }
+        out
     }
 
-    let mut indegree = vec![0usize; adj.len()];
-    for edges in &adj {
-        for &to in edges {
-            indegree[to] += 1;
+    let mut color = vec![WHITE; closure_states.len()];
+    for start in 0..closure_states.len() {
+        if color[start] != WHITE {
+            continue;
         }
-    }
 
-    let mut queue = VecDeque::<usize>::new();
-    for (idx, &deg) in indegree.iter().enumerate() {
-        if deg == 0 {
-            queue.push_back(idx);
-        }
-    }
+        color[start] = GRAY;
+        let mut stack = vec![DfsFrame {
+            node: start,
+            neighbors: tau_successor_indices(provider, &closure_states[start], &index_of),
+            cursor: 0,
+        }];
 
-    let mut visited = 0usize;
-    while let Some(v) = queue.pop_front() {
-        visited += 1;
-        for &to in &adj[v] {
-            indegree[to] = indegree[to].saturating_sub(1);
-            if indegree[to] == 0 {
-                queue.push_back(to);
+        while let Some(frame) = stack.last_mut() {
+            if frame.cursor >= frame.neighbors.len() {
+                color[frame.node] = BLACK;
+                stack.pop();
+                continue;
+            }
+            let next = frame.neighbors[frame.cursor];
+            frame.cursor += 1;
+            match color[next] {
+                WHITE => {
+                    color[next] = GRAY;
+                    stack.push(DfsFrame {
+                        node: next,
+                        neighbors: tau_successor_indices(
+                            provider,
+                            &closure_states[next],
+                            &index_of,
+                        ),
+                        cursor: 0,
+                    });
+                }
+                GRAY => return true,
+                _ => {}
             }
         }
     }
 
-    visited != adj.len()
+    false
 }
 
 fn bfs_refinement<F>(
