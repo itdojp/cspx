@@ -61,7 +61,7 @@ flowchart LR
 - `is_minimized` は最小化保証状態を明示
 
 ### 4.4 スケール/性能（Plan C 反映）
-- `DiskStateStore`（`log/idx/lock`）と再構築導線
+- `DiskStateStore`（`state.log` / `state.idx` / `state.lock`）と再構築導線
 - `HybridStateStore`（memory 優先 + spill）
 - `explore_parallel` の deterministic 要件
 - `--explore-profile` によるホットパス可視化
@@ -90,7 +90,7 @@ flowchart LR
 
 推奨運用:
 - `cspx` バージョンは tag/commit pin 固定
-- `schema_version=0.1` 互換前提で受理
+- Result JSON の `schema_version=0.1` 互換前提で受理
 - unknown フィールドは互換拡張として扱う
 
 ## 7. 運用シナリオ
