@@ -106,6 +106,13 @@ fn single_process_module(
     }
 }
 
+fn parse_fd_tag(tags: &[String], key: &str) -> Option<u64> {
+    let prefix = format!("{key}:");
+    tags.iter()
+        .find_map(|tag| tag.strip_prefix(&prefix))
+        .and_then(|value| value.parse::<u64>().ok())
+}
+
 #[test]
 fn refinement_mismatch_fails() {
     let spec = cspx_core::ir::Module {
@@ -502,4 +509,75 @@ fn failures_divergences_refinement_fails_on_impl_divergence() {
         .tags
         .iter()
         .any(|t| t.starts_with("fd_impl_closure_max:")));
+    assert!(counterexample
+        .tags
+        .iter()
+        .any(|t| t.starts_with("fd_closure_cache_hits:")));
+    assert!(counterexample
+        .tags
+        .iter()
+        .any(|t| t.starts_with("fd_closure_cache_misses:")));
+    assert!(counterexample
+        .tags
+        .iter()
+        .any(|t| t.starts_with("fd_divergence_cache_hits:")));
+    assert!(counterexample
+        .tags
+        .iter()
+        .any(|t| t.starts_with("fd_divergence_cache_misses:")));
+}
+
+#[test]
+fn failures_divergences_refinement_reuses_closure_cache() {
+    let spec_path = "spec.cspm";
+    let impl_path = "impl.cspm";
+
+    let spec_expr = prefix("a", ref_proc("SPEC", spec_path), spec_path);
+    let spec = single_process_module(
+        "SPEC",
+        spec_expr,
+        vec![unit_channel("a", spec_path), unit_channel("c", spec_path)],
+        spec_path,
+    );
+    let impl_ = cspx_core::ir::Module {
+        channels: vec![unit_channel("a", impl_path), unit_channel("c", impl_path)],
+        declarations: vec![
+            cspx_core::ir::ProcessDecl {
+                name: spanned("IMPL".to_string(), impl_path),
+                expr: ref_proc("P0", impl_path),
+            },
+            cspx_core::ir::ProcessDecl {
+                name: spanned("P0".to_string(), impl_path),
+                expr: prefix("a", ref_proc("P1", impl_path), impl_path),
+            },
+            cspx_core::ir::ProcessDecl {
+                name: spanned("P1".to_string(), impl_path),
+                expr: prefix("a", ref_proc("P2", impl_path), impl_path),
+            },
+            cspx_core::ir::ProcessDecl {
+                name: spanned("P2".to_string(), impl_path),
+                expr: prefix("c", stop(impl_path), impl_path),
+            },
+        ],
+        assertions: Vec::new(),
+        entry: Some(ref_proc("IMPL", impl_path)),
+    };
+
+    let checker = RefinementChecker;
+    let request = CheckRequest {
+        command: CheckCommand::Refine,
+        model: Some(RefinementModel::FD),
+        target: Some("spec impl".to_string()),
+    };
+    let input = RefinementInput { spec, impl_ };
+    let result = checker.check(&request, &input);
+
+    assert_eq!(result.status, cspx_core::types::Status::Fail);
+    let counterexample = result.counterexample.expect("counterexample");
+    let closure_cache_hits =
+        parse_fd_tag(&counterexample.tags, "fd_closure_cache_hits").expect("cache hits");
+    let divergence_cache_hits = parse_fd_tag(&counterexample.tags, "fd_divergence_cache_hits")
+        .expect("divergence cache hits");
+    assert!(closure_cache_hits > 0);
+    assert!(divergence_cache_hits > 0);
 }

@@ -176,6 +176,8 @@ deterministic mode は「スケジュールに依存しない探索順」を仕�
 - `RefinementChecker(FD)` は counterexample tags に次を付与する。
   - `fd_nodes`, `fd_edges`, `fd_divergence_checks`, `fd_pruned_nodes`
   - `fd_impl_closure_max`, `fd_spec_closure_max`
+  - `fd_closure_cache_hits`, `fd_closure_cache_misses`
+  - `fd_divergence_cache_hits`, `fd_divergence_cache_misses`
 - `scripts/run-problems` の `metrics-summary.json` は、上記タグがある run で `aggregate.divergence` を出力する。
 
 ### 再現手順
