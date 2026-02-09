@@ -58,19 +58,6 @@ enum ProviderSide {
     Impl,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct NextClosureCacheKey {
-    side: ProviderSide,
-    from_sig: Vec<Vec<u8>>,
-    label: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-struct DivergenceCacheKey {
-    side: ProviderSide,
-    closure_sig: Vec<Vec<u8>>,
-}
-
 enum NodeAction {
     Continue,
     Prune,
@@ -79,7 +66,7 @@ enum NodeAction {
 
 #[derive(Debug, Default)]
 struct NextClosureCache {
-    entries: HashMap<NextClosureCacheKey, Closure>,
+    entries: HashMap<ProviderSide, HashMap<Vec<Vec<u8>>, HashMap<String, Closure>>>,
     hits: u64,
     misses: u64,
 }
@@ -92,25 +79,29 @@ impl NextClosureCache {
         from_closure: &Closure,
         label: &str,
     ) -> Closure {
-        let key = NextClosureCacheKey {
-            side,
-            from_sig: from_closure.sig.clone(),
-            label: label.to_string(),
-        };
-        if let Some(cached) = self.entries.get(&key) {
-            self.hits = self.hits.saturating_add(1);
-            return cached.clone();
+        if let Some(by_sig) = self.entries.get(&side) {
+            if let Some(by_label) = by_sig.get(from_closure.sig.as_slice()) {
+                if let Some(cached) = by_label.get(label) {
+                    self.hits = self.hits.saturating_add(1);
+                    return cached.clone();
+                }
+            }
         }
         self.misses = self.misses.saturating_add(1);
         let computed = next_by_label(provider, &from_closure.states, label);
-        self.entries.insert(key, computed.clone());
+        self.entries
+            .entry(side)
+            .or_default()
+            .entry(from_closure.sig.clone())
+            .or_default()
+            .insert(label.to_string(), computed.clone());
         computed
     }
 }
 
 #[derive(Debug, Default)]
 struct DivergenceCache {
-    entries: HashMap<DivergenceCacheKey, bool>,
+    entries: HashMap<ProviderSide, HashMap<Vec<Vec<u8>>, bool>>,
     hits: u64,
     misses: u64,
 }
@@ -123,17 +114,18 @@ impl DivergenceCache {
         provider: &CspmTransitionProvider,
         closure_states: &[State],
     ) -> bool {
-        let key = DivergenceCacheKey {
-            side,
-            closure_sig: closure_sig.to_vec(),
-        };
-        if let Some(cached) = self.entries.get(&key).copied() {
-            self.hits = self.hits.saturating_add(1);
-            return cached;
+        if let Some(by_sig) = self.entries.get(&side) {
+            if let Some(cached) = by_sig.get(closure_sig).copied() {
+                self.hits = self.hits.saturating_add(1);
+                return cached;
+            }
         }
         self.misses = self.misses.saturating_add(1);
         let computed = closure_has_tau_cycle(provider, closure_states);
-        self.entries.insert(key, computed);
+        self.entries
+            .entry(side)
+            .or_default()
+            .insert(closure_sig.to_vec(), computed);
         computed
     }
 }
