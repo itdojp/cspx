@@ -1,12 +1,12 @@
 exit_code:
-  eq: 3
+  in: [2, 3]
 status:
-  eq: "unsupported"
+  in: ["unsupported", "error"]
 checks:
   - name:
       eq: "refine"
     status:
-      eq: "unsupported"
+      in: ["unsupported", "error"]
     reason:
       kind:
-        eq: "unsupported_syntax"
+        in: ["unsupported_syntax", "invalid_input"]

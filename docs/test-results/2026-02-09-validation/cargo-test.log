@@ -1,0 +1,162 @@
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 4 tests
+test golden_refine ... ok
+test golden_check_all_assertions ... ok
+test golden_typecheck ... ok
+test golden_check_assert ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 5 tests
+test parallel_must_be_at_least_one ... ok
+test deterministic_requires_seed ... ok
+test explore_profile_is_absent_by_default ... ok
+test typecheck_parallel_options_are_recorded_in_invocation ... ok
+test explore_profile_on_off_keeps_result_and_stats_consistent ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 6 tests
+test schema_check_assert ... ok
+test schema_check_all_assertions ... ok
+test schema_refine ... ok
+test schema_accepts_legacy_payload_without_metrics ... ok
+test schema_typecheck_with_explore_profile ... ok
+test schema_typecheck ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+
+running 3 tests
+test summary_json_for_typecheck_passes_schema_and_contract ... ok
+test summary_json_maps_fail_status_for_assertions_mode ... ok
+test summary_json_maps_unsupported_status ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 6 tests
+test explain_simple::tests::basic_explainer_appends_explained_and_kind_tag ... ok
+test minimize_simple::tests::minimize_with_oracle_drops_redundant_events ... ok
+test explain_simple::tests::basic_explainer_deduplicates_tags ... ok
+test minimize_simple::tests::minimize_with_oracle_marks_not_minimized_when_failure_not_preserved ... ok
+test minimize_simple::tests::minimize_with_oracle_preserves_tau_when_required_for_failure ... ok
+test minimize_simple::tests::minimize_without_oracle_keeps_unverified_flag ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+test deadlock_selects_last_deadlock_free_assert_target ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 2 tests
+test deterministic_passes_for_single_visible_choice ... ok
+test nondeterminism_by_internal_choice_fails_with_branch_label ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 3 tests
+test divergence_free_passes_without_tau_cycle ... ok
+test divergence_by_hiding_fails_with_tau_trace ... ok
+test divergence_after_visible_prefix_includes_prefix_in_trace ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 12 tests
+test disk_state_store_rejects_zero_index_flush_every ... ok
+test disk_state_store_drop_flushes_pending_index_updates ... ok
+test disk_state_store_rejects_concurrent_open ... ok
+test disk_state_store_metrics_track_io_and_collisions ... ok
+test disk_state_store_errors_on_invalid_complete_log_line ... ok
+test disk_state_store_persists ... ok
+test disk_state_store_batches_index_writes ... ok
+test disk_state_store_ignores_partial_log_tail ... ok
+test disk_state_store_metrics_track_index_load_and_rebuild ... ok
+test disk_state_store_rebuilds_index_when_corrupted ... ok
+test disk_state_store_rebuilds_index_when_missing ... ok
+test disk_state_store_metrics_capture_lock_retry_wait ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+
+running 7 tests
+test explore_parallel_deterministic_mode_normalizes_frontier_order ... ok
+test explore_parallel_deterministic_mode_is_reproducible ... ok
+test explore_parallel_profiled_deterministic_matches_regular_stats ... ok
+test explore_profiled_matches_explore_stats ... ok
+test explore_parallel_stop_yields_single_state ... ok
+test explore_stop_yields_single_state ... ok
+test explore_parallel_deterministic_dense_duplicates_preserve_stats ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 5 tests
+test p000_minimal_valid_passes ... ok
+test p001_syntax_error_is_invalid_input_with_span ... ok
+test p003_payload_out_of_range_is_invalid_input_with_span ... ok
+test p002_undefined_process_is_invalid_input_with_span ... ok
+test p004_datatype_is_unsupported_syntax_with_span ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 5 tests
+test hybrid_store_rejects_existing_spill_path ... ok
+test hybrid_store_rejects_zero_threshold ... ok
+test hybrid_store_stays_in_memory_below_threshold ... ok
+test hybrid_store_insert_rolls_back_when_spill_write_fails ... ok
+test hybrid_store_spills_and_persists_states ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+
+running 9 tests
+test explore_external_choice_is_stable ... ok
+test explore_guarded_recursion_is_single_state_loop ... ok
+test explore_hiding_maps_parallel_sync_event_to_tau ... ok
+test explore_hiding_turns_visible_event_into_tau_loop ... ok
+test explore_interface_parallel_deadlocks_after_one_sync ... ok
+test explore_hiding_only_affects_matching_channels ... ok
+test explore_interleaving_allows_independent_steps ... ok
+test explore_interface_parallel_sync_rendezvous_is_single_state_loop ... ok
+test explore_internal_choice_uses_tau ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 9 tests
+test failures_divergences_refinement_passes_on_stop ... ok
+test failures_divergences_refinement_fails_on_impl_divergence ... ok
+test failures_refinement_fails_on_refusal_mismatch ... ok
+test failures_divergences_refinement_reuses_closure_cache ... ok
+test failures_refinement_passes_on_identical_offers ... ok
+test refinement_mismatch_fails ... ok
+test traces_refinement_fails_on_extra_visible_event ... ok
+test traces_refinement_handles_tau_closure ... ok
+test traces_refinement_passes_on_subset ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
