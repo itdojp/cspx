@@ -13,6 +13,7 @@ WS6-A（`#121`）で固定した計測導線を基準に、FD最適化の着手�
 1. P1 `#134` FD tau-closure/cycle 判定メモ化
 2. P2 `#135` FD SCC判定最適化（divergence heavy path）
 3. P3 `#136` FD 並列化/POR適用の事前検証スパイク
+   - 検証条件テンプレート: `docs/fd-parallel-por-spike.md`
 
 ## 子Issue共通ルール
 - 各Issueは、実装前に「測定対象」「成功条件」「撤退条件」を本文に明記する。
