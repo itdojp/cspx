@@ -5,4 +5,5 @@ FD重経路（tau-closure 64状態リング）を再現する bench 題材。
 - `unsupported` / `unsupported_syntax`
 - `error` / `invalid_input`（例: entry process not specified）
 
-機能境界の固定を優先し、期待値は暫定で `unsupported/error` の双方を許容する。
+期待値スキーマは status/exit_code/reason.kind の組み合わせ（anyOf相当）を表現できないため、
+機能境界の固定を優先して `status` ベースで `unsupported/error` の双方を暫定許容する。

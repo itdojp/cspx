@@ -7,7 +7,7 @@
 ## 0. 結論
 - `Issue #105` は `CLOSED`、A/B/C のタスクチェックは全て `[x]` で完了状態。
 - Problem Suite（`fast` + `bench`）は、現行期待値に対して **全33問題 PASS**。
-- `cargo test` は **全63テスト PASS**（fail 0）。
+- `cargo test` は **全77テスト PASS**（fail 0）。
 
 ## 1. #105（案A/B/C）完了確認
 2026-02-09 時点で、以下を確認した。
@@ -25,6 +25,7 @@
 ```sh
 cargo build -p cspx
 cargo build -p cspx --release
+cargo test
 scripts/run-problems --suite fast --cspx target/debug/cspx
 scripts/run-problems --suite bench --cspx target/release/cspx --measure-runs 5 --warmup-runs 1
 ```
@@ -48,7 +49,7 @@ scripts/run-problems --suite bench --cspx target/release/cspx --measure-runs 5 -
 
 ## 4. テスト結果
 ### 4.1 `cargo test`
-- 実行結果: **63 passed / 0 failed**
+- 実行結果: **77 passed / 0 failed**
 - 主な領域: CLI schema/golden、frontend、LTS、deadlock/divergence/determinism/refinement、Disk/Hybrid store、並列探索決定性
 
 ## 5. CI 実績

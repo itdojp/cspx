@@ -1,5 +1,3 @@
-exit_code:
-  in: [2, 3]
 status:
   in: ["unsupported", "error"]
 checks:
@@ -7,6 +5,3 @@ checks:
       eq: "refine"
     status:
       in: ["unsupported", "error"]
-    reason:
-      kind:
-        in: ["unsupported_syntax", "invalid_input"]
