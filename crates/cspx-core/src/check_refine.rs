@@ -280,6 +280,9 @@ fn closure_has_tau_cycle(provider: &CspmTransitionProvider, closure_states: &[St
     if closure_states.is_empty() {
         return false;
     }
+    const WHITE: u8 = 0;
+    const GRAY: u8 = 1;
+    const BLACK: u8 = 2;
 
     let mut index_of = HashMap::<State, usize>::new();
     for (idx, state) in closure_states.iter().cloned().enumerate() {
@@ -311,13 +314,13 @@ fn closure_has_tau_cycle(provider: &CspmTransitionProvider, closure_states: &[St
         out
     }
 
-    let mut color = vec![0u8; closure_states.len()];
+    let mut color = vec![WHITE; closure_states.len()];
     for start in 0..closure_states.len() {
-        if color[start] != 0 {
+        if color[start] != WHITE {
             continue;
         }
 
-        color[start] = 1;
+        color[start] = GRAY;
         let mut stack = vec![DfsFrame {
             node: start,
             neighbors: tau_successor_indices(provider, &closure_states[start], &index_of),
@@ -326,15 +329,15 @@ fn closure_has_tau_cycle(provider: &CspmTransitionProvider, closure_states: &[St
 
         while let Some(frame) = stack.last_mut() {
             if frame.cursor >= frame.neighbors.len() {
-                color[frame.node] = 2;
+                color[frame.node] = BLACK;
                 stack.pop();
                 continue;
             }
             let next = frame.neighbors[frame.cursor];
             frame.cursor += 1;
             match color[next] {
-                0 => {
-                    color[next] = 1;
+                WHITE => {
+                    color[next] = GRAY;
                     stack.push(DfsFrame {
                         node: next,
                         neighbors: tau_successor_indices(
@@ -345,7 +348,7 @@ fn closure_has_tau_cycle(provider: &CspmTransitionProvider, closure_states: &[St
                         cursor: 0,
                     });
                 }
-                1 => return true,
+                GRAY => return true,
                 _ => {}
             }
         }
